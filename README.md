@@ -14,6 +14,9 @@ Features implemented:
 - Favorites (star), Favorites filter, and persisted preferences
 - Cached quotes fallback for poor connectivity
 - Enhanced loading, empty, info, and error states
+- Per-commodity detail screen with historical chart
+- Selectable chart ranges (`1D`, `5D`, `1M`, `3M`, `1Y`)
+- Historical period stats (low, high, period change)
 - In-app Settings sheet with maintenance/disclaimer
 
 ## 1) Open in Xcode (local preview)
@@ -31,6 +34,7 @@ Features implemented:
 
 Notes:
 - Data source uses Yahoo Finance quote endpoint.
+- Historical chart source uses Yahoo Finance chart endpoint.
 - Prices may be delayed based on market/data provider policies.
 
 ## 2) Publish to App Store (step-by-step)
@@ -77,7 +81,8 @@ Notes:
 ## 3) Recommended next improvements before publishing
 
 - Add selectable currency and units
-- Add true historical chart API and real historical sparkline data
+- Replace synthetic mini sparkline on cards with real intraday sparkline per commodity
 - Add unit tests for service parsing + view model cache/favorites behavior
+- Add unit tests for historical chart parsing and range selection behavior
 - Add UI tests for refresh and favorites flows
 - Replace data source with an official market data API and licensing terms suitable for production

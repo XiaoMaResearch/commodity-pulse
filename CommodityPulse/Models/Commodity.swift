@@ -43,3 +43,40 @@ struct CommodityQuote: Identifiable, Equatable, Codable {
 
     var id: String { commodity.id }
 }
+
+enum CommodityChartRange: String, CaseIterable, Identifiable {
+    case oneDay = "1D"
+    case fiveDays = "5D"
+    case oneMonth = "1M"
+    case threeMonths = "3M"
+    case oneYear = "1Y"
+
+    var id: String { rawValue }
+
+    var queryRange: String {
+        switch self {
+        case .oneDay: return "1d"
+        case .fiveDays: return "5d"
+        case .oneMonth: return "1mo"
+        case .threeMonths: return "3mo"
+        case .oneYear: return "1y"
+        }
+    }
+
+    var queryInterval: String {
+        switch self {
+        case .oneDay: return "5m"
+        case .fiveDays: return "30m"
+        case .oneMonth: return "1d"
+        case .threeMonths: return "1d"
+        case .oneYear: return "1wk"
+        }
+    }
+}
+
+struct CommodityPricePoint: Identifiable, Equatable {
+    let date: Date
+    let price: Double
+
+    var id: TimeInterval { date.timeIntervalSince1970 }
+}

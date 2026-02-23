@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 
 struct ContentView: View {
     @StateObject private var viewModel = CommodityViewModel()
@@ -46,13 +47,14 @@ struct ContentView: View {
                                     CommodityCard(
                                         quote: quote,
                                         isFavorite: viewModel.isFavorite(quote.commodity),
-                                        onFavoriteTap: { viewModel.toggleFavorite(quote.commodity) }
+                                        onFavoriteTap: { viewModel.toggleFavorite(quote.commodity) },
+                                        onOpenDetails: { viewModel.openDetails(for: quote.commodity) }
                                     )
                                     .opacity(cardVisible ? 1 : 0)
                                     .offset(y: cardVisible ? 0 : 24)
                                     .animation(
                                         .spring(response: 0.55, dampingFraction: 0.82)
-                                        .delay(Double(index) * 0.06),
+                                            .delay(Double(index) * 0.06),
                                         value: cardVisible
                                     )
                                 }
@@ -82,6 +84,9 @@ struct ContentView: View {
             .onDisappear { viewModel.stopAutoRefresh() }
             .sheet(isPresented: $showingSettings) {
                 SettingsSheet(viewModel: viewModel)
+            }
+            .sheet(item: $viewModel.selectedCommodity, onDismiss: { viewModel.closeDetails() }) { commodity in
+                CommodityDetailSheet(viewModel: viewModel, commodity: commodity)
             }
         }
     }
@@ -260,7 +265,7 @@ private struct LoadingCards: View {
             ForEach(0..<4, id: \.self) { _ in
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(Color.white.opacity(0.08))
-                    .frame(height: 116)
+                    .frame(height: 130)
                     .redacted(reason: .placeholder)
             }
         }
@@ -271,6 +276,7 @@ private struct CommodityCard: View {
     let quote: CommodityQuote
     let isFavorite: Bool
     let onFavoriteTap: () -> Void
+    let onOpenDetails: () -> Void
 
     private var changeColor: Color {
         quote.change > 0 ? Color(red: 0.3, green: 0.95, blue: 0.6) : (quote.change < 0 ? Color(red: 1.0, green: 0.45, blue: 0.45) : Color.white.opacity(0.75))
@@ -281,9 +287,10 @@ private struct CommodityCard: View {
     }
 
     private var changeText: String {
+        let sign = quote.change > 0 ? "+" : ""
         let change = quote.change.formatted(.number.precision(.fractionLength(2)))
         let percent = quote.changePercent.formatted(.number.precision(.fractionLength(2)))
-        return "\(change) (\(percent)%)"
+        return "\(sign)\(change) (\(sign)\(percent)%)"
     }
 
     var body: some View {
@@ -298,14 +305,25 @@ private struct CommodityCard: View {
                         .foregroundStyle(Color.white.opacity(0.7))
                 }
                 Spacer()
-                Button(action: onFavoriteTap) {
-                    Image(systemName: isFavorite ? "star.fill" : "star")
-                        .foregroundStyle(isFavorite ? Color(red: 0.99, green: 0.76, blue: 0.26) : Color.white.opacity(0.8))
-                        .padding(8)
-                        .background(Color.white.opacity(0.08))
-                        .clipShape(Circle())
+                HStack(spacing: 8) {
+                    Button(action: onOpenDetails) {
+                        Image(systemName: "chart.line.uptrend.xyaxis")
+                            .foregroundStyle(.white)
+                            .padding(8)
+                            .background(Color.white.opacity(0.10))
+                            .clipShape(Circle())
+                    }
+                    .accessibilityLabel("Open historical chart")
+
+                    Button(action: onFavoriteTap) {
+                        Image(systemName: isFavorite ? "star.fill" : "star")
+                            .foregroundStyle(isFavorite ? Color(red: 0.99, green: 0.76, blue: 0.26) : Color.white.opacity(0.8))
+                            .padding(8)
+                            .background(Color.white.opacity(0.08))
+                            .clipShape(Circle())
+                    }
+                    .accessibilityLabel(isFavorite ? "Remove Favorite" : "Add Favorite")
                 }
-                .accessibilityLabel(isFavorite ? "Remove Favorite" : "Add Favorite")
             }
 
             HStack(alignment: .bottom) {
@@ -323,8 +341,21 @@ private struct CommodityCard: View {
                     .foregroundStyle(changeColor)
             }
 
-            TrendSparkline(quote: quote, lineColor: changeColor)
-                .frame(height: 38)
+            HStack {
+                TrendSparkline(quote: quote, lineColor: changeColor)
+                    .frame(height: 38)
+                Spacer()
+                Button(action: onOpenDetails) {
+                    Text("Details")
+                        .font(.system(.caption, design: .rounded, weight: .bold))
+                        .foregroundStyle(Color.white.opacity(0.9))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.white.opacity(0.10))
+                        .clipShape(Capsule())
+                }
+                .accessibilityLabel("View detailed chart")
+            }
         }
         .padding(16)
         .background(
@@ -381,6 +412,319 @@ private struct TrendSparkline: View {
     }
 }
 
+private struct CommodityDetailSheet: View {
+    @ObservedObject var viewModel: CommodityViewModel
+    let commodity: Commodity
+    @Environment(\.dismiss) private var dismiss
+
+    private var quote: CommodityQuote? {
+        viewModel.quote(for: commodity)
+    }
+
+    private var lineColor: Color {
+        guard let change = quote?.change else { return Color(red: 0.3, green: 0.75, blue: 1.0) }
+        return change >= 0 ? Color(red: 0.3, green: 0.95, blue: 0.6) : Color(red: 1.0, green: 0.45, blue: 0.45)
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                DashboardTheme.background
+                    .ignoresSafeArea()
+
+                ScrollView {
+                    VStack(spacing: 16) {
+                        detailHeader
+                        RangeSelector(
+                            selectedRange: viewModel.selectedChartRange,
+                            onSelect: { range in
+                                Task { await viewModel.setChartRange(range) }
+                            }
+                        )
+
+                        if viewModel.isHistoryLoading && viewModel.historyPoints.isEmpty {
+                            ProgressView("Loading history...")
+                                .progressViewStyle(.circular)
+                                .foregroundStyle(.white)
+                                .padding(20)
+                        }
+
+                        if let error = viewModel.historyErrorMessage {
+                            ErrorPanel(message: error)
+                        }
+
+                        if !viewModel.historyPoints.isEmpty {
+                            CommodityHistoryChart(
+                                points: viewModel.historyPoints,
+                                lineColor: lineColor,
+                                selectedRange: viewModel.selectedChartRange
+                            )
+                            .frame(height: 250)
+
+                            HistoryStatsPanel(points: viewModel.historyPoints, lineColor: lineColor)
+                        }
+
+                        Button {
+                            Task { await viewModel.refreshSelectedHistory(force: true) }
+                        } label: {
+                            HStack(spacing: 8) {
+                                if viewModel.isHistoryLoading {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                        .tint(.black)
+                                } else {
+                                    Image(systemName: "arrow.clockwise")
+                                }
+                                Text("Refresh Chart Data")
+                                    .fontWeight(.semibold)
+                            }
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .background(Color(red: 0.99, green: 0.76, blue: 0.26))
+                            .clipShape(Capsule())
+                        }
+                        .disabled(viewModel.isHistoryLoading)
+
+                        Text("Historical data is provided for informational use only and may be delayed.")
+                            .font(.system(.footnote, design: .rounded, weight: .medium))
+                            .foregroundStyle(Color.white.opacity(0.7))
+                            .multilineTextAlignment(.center)
+                            .padding(.top, 8)
+                    }
+                    .padding(16)
+                }
+            }
+            .navigationTitle(commodity.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .fontWeight(.semibold)
+                }
+            }
+            .task {
+                if viewModel.selectedCommodity != commodity {
+                    viewModel.openDetails(for: commodity)
+                }
+                if viewModel.historyPoints.isEmpty {
+                    await viewModel.refreshSelectedHistory()
+                }
+            }
+        }
+    }
+
+    private var detailHeader: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(commodity.name)
+                        .font(.system(.title2, design: .rounded, weight: .bold))
+                        .foregroundStyle(.white)
+                    Text(commodity.unit)
+                        .font(.system(.subheadline, design: .rounded, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.72))
+                }
+                Spacer()
+                if let quote {
+                    Text("$\(quote.price.formatted(.number.precision(.fractionLength(2))))")
+                        .font(.system(.title2, design: .rounded, weight: .heavy))
+                        .foregroundStyle(.white)
+                }
+            }
+
+            if let quote {
+                let sign = quote.change >= 0 ? "+" : ""
+                let changeText = "\(sign)\(quote.change.formatted(.number.precision(.fractionLength(2)))) (\(sign)\(quote.changePercent.formatted(.number.precision(.fractionLength(2))))%)"
+                Text(changeText)
+                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                    .foregroundStyle(lineColor)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.white.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.white.opacity(0.14), lineWidth: 1)
+        )
+    }
+}
+
+private struct RangeSelector: View {
+    let selectedRange: CommodityChartRange
+    let onSelect: (CommodityChartRange) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(CommodityChartRange.allCases) { range in
+                    Button(action: { onSelect(range) }) {
+                        Text(range.rawValue)
+                            .font(.system(.caption, design: .rounded, weight: .bold))
+                            .foregroundStyle(selectedRange == range ? .black : Color.white.opacity(0.9))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(
+                                selectedRange == range
+                                    ? Color(red: 0.99, green: 0.76, blue: 0.26)
+                                    : Color.white.opacity(0.08)
+                            )
+                            .clipShape(Capsule())
+                    }
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+}
+
+private struct CommodityHistoryChart: View {
+    let points: [CommodityPricePoint]
+    let lineColor: Color
+    let selectedRange: CommodityChartRange
+
+    var body: some View {
+        Chart(points) { point in
+            AreaMark(
+                x: .value("Time", point.date),
+                y: .value("Price", point.price)
+            )
+            .foregroundStyle(
+                LinearGradient(
+                    colors: [lineColor.opacity(0.32), lineColor.opacity(0.02)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+
+            LineMark(
+                x: .value("Time", point.date),
+                y: .value("Price", point.price)
+            )
+            .interpolationMethod(.catmullRom)
+            .foregroundStyle(lineColor)
+            .lineStyle(StrokeStyle(lineWidth: 2.6, lineCap: .round, lineJoin: .round))
+        }
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: 4)) { value in
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.3))
+                    .foregroundStyle(Color.white.opacity(0.12))
+                AxisValueLabel {
+                    if let date = value.as(Date.self) {
+                        Text(date, format: xAxisFormat)
+                            .foregroundStyle(Color.white.opacity(0.78))
+                    }
+                }
+            }
+        }
+        .chartYAxis {
+            AxisMarks(position: .leading) { value in
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.3))
+                    .foregroundStyle(Color.white.opacity(0.12))
+                AxisValueLabel {
+                    if let price = value.as(Double.self) {
+                        Text("$\(price.formatted(.number.precision(.fractionLength(0...2))))")
+                            .foregroundStyle(Color.white.opacity(0.78))
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.white.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        )
+    }
+
+    private var xAxisFormat: Date.FormatStyle {
+        switch selectedRange {
+        case .oneDay:
+            return .dateTime.hour().minute()
+        case .fiveDays:
+            return .dateTime.weekday(.abbreviated)
+        case .oneMonth, .threeMonths:
+            return .dateTime.month(.abbreviated).day()
+        case .oneYear:
+            return .dateTime.month(.abbreviated)
+        }
+    }
+}
+
+private struct HistoryStatsPanel: View {
+    let points: [CommodityPricePoint]
+    let lineColor: Color
+
+    private var low: Double? {
+        points.map(\.price).min()
+    }
+
+    private var high: Double? {
+        points.map(\.price).max()
+    }
+
+    private var absoluteChange: Double? {
+        guard let first = points.first?.price, let last = points.last?.price else { return nil }
+        return last - first
+    }
+
+    private var percentChange: Double? {
+        guard let first = points.first?.price, let abs = absoluteChange, first != 0 else { return nil }
+        return (abs / first) * 100
+    }
+
+    private var changeText: String {
+        guard let absoluteChange, let percentChange else { return "--" }
+        let sign = absoluteChange >= 0 ? "+" : ""
+        return "\(sign)\(absoluteChange.formatted(.number.precision(.fractionLength(2)))) (\(sign)\(percentChange.formatted(.number.precision(.fractionLength(2))))%)"
+    }
+
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                StatPill(title: "Low", value: priceText(low), tint: Color.white.opacity(0.8))
+                StatPill(title: "High", value: priceText(high), tint: Color.white.opacity(0.8))
+            }
+            StatPill(title: "Period Change", value: changeText, tint: lineColor)
+        }
+    }
+
+    private func priceText(_ value: Double?) -> String {
+        guard let value else { return "--" }
+        return "$\(value.formatted(.number.precision(.fractionLength(2))))"
+    }
+}
+
+private struct StatPill: View {
+    let title: String
+    let value: String
+    let tint: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.system(.caption2, design: .rounded, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.6))
+            Text(value)
+                .font(.system(.subheadline, design: .rounded, weight: .bold))
+                .foregroundStyle(tint)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.white.opacity(0.08))
+        )
+    }
+}
+
 private struct SettingsSheet: View {
     @ObservedObject var viewModel: CommodityViewModel
     @Environment(\.dismiss) private var dismiss
@@ -389,13 +733,13 @@ private struct SettingsSheet: View {
         NavigationStack {
             List {
                 Section("Data") {
-                    Text("Source: Yahoo Finance quote endpoint.")
-                    Text("Quotes may be delayed and are for informational use only.")
+                    Text("Source: Yahoo Finance quote and chart endpoints.")
+                    Text("Quotes and history may be delayed and are for informational use only.")
                 }
 
                 Section("Preferences") {
                     Text("Auto-refresh runs every 60 seconds while app is active.")
-                    Text("Manual refresh is always available from the dashboard.")
+                    Text("Manual refresh is always available from dashboard and detail chart views.")
                 }
 
                 Section("Maintenance") {

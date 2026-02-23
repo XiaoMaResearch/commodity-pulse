@@ -11,9 +11,20 @@ final class CommodityViewModel: ObservableObject {
         didSet { defaults.set(selectedFilter.rawValue, forKey: filterKey) }
     }
 
+    @Published var selectedCommodity: Commodity?
+    @Published var selectedChartRange: CommodityChartRange = .oneMonth
+    @Published private(set) var historyPoints: [CommodityPricePoint] = []
+    @Published private(set) var isHistoryLoading = false
+    @Published var historyErrorMessage: String?
+
     private struct CachePayload: Codable {
         let quotes: [CommodityQuote]
         let lastUpdated: Date?
+    }
+
+    private struct HistoryCacheKey: Hashable {
+        let commodity: Commodity
+        let range: CommodityChartRange
     }
 
     private let service = CommodityService()
@@ -25,6 +36,7 @@ final class CommodityViewModel: ObservableObject {
     private let decoder = JSONDecoder()
 
     private var favoriteSymbols: Set<String> = []
+    private var historyCache: [HistoryCacheKey: [CommodityPricePoint]] = [:]
     private var autoRefreshTask: Task<Void, Never>?
 
     init() {
@@ -52,6 +64,10 @@ final class CommodityViewModel: ObservableObject {
 
     var hasFavorites: Bool {
         !favoriteSymbols.isEmpty
+    }
+
+    func quote(for commodity: Commodity) -> CommodityQuote? {
+        quotes.first { $0.commodity == commodity }
     }
 
     func isFavorite(_ commodity: Commodity) -> Bool {
@@ -107,6 +123,31 @@ final class CommodityViewModel: ObservableObject {
         autoRefreshTask = nil
     }
 
+    func openDetails(for commodity: Commodity) {
+        selectedCommodity = commodity
+        selectedChartRange = .oneMonth
+        historyErrorMessage = nil
+        historyPoints = []
+        Task { await loadHistory(for: commodity, range: .oneMonth) }
+    }
+
+    func closeDetails() {
+        selectedCommodity = nil
+        historyPoints = []
+        historyErrorMessage = nil
+        isHistoryLoading = false
+    }
+
+    func refreshSelectedHistory(force: Bool = false) async {
+        guard let commodity = selectedCommodity else { return }
+        await loadHistory(for: commodity, range: selectedChartRange, force: force)
+    }
+
+    func setChartRange(_ range: CommodityChartRange) async {
+        selectedChartRange = range
+        await refreshSelectedHistory()
+    }
+
     func clearCachedQuotes() {
         defaults.removeObject(forKey: cacheKey)
         quotes = []
@@ -121,6 +162,36 @@ final class CommodityViewModel: ObservableObject {
         defaults.removeObject(forKey: favoritesKey)
         defaults.removeObject(forKey: filterKey)
         objectWillChange.send()
+    }
+
+    private func loadHistory(for commodity: Commodity, range: CommodityChartRange, force: Bool = false) async {
+        let key = HistoryCacheKey(commodity: commodity, range: range)
+
+        if !force, let cached = historyCache[key], !cached.isEmpty {
+            historyPoints = cached
+            historyErrorMessage = nil
+            return
+        }
+
+        isHistoryLoading = true
+        defer { isHistoryLoading = false }
+
+        do {
+            let points = try await service.fetchHistory(for: commodity, range: range)
+            historyCache[key] = points
+
+            if selectedCommodity == commodity && selectedChartRange == range {
+                historyPoints = points
+                historyErrorMessage = nil
+            }
+        } catch {
+            if let cached = historyCache[key], !cached.isEmpty {
+                historyPoints = cached
+            }
+            if selectedCommodity == commodity && selectedChartRange == range {
+                historyErrorMessage = error.localizedDescription
+            }
+        }
     }
 
     private func persistCache() {
