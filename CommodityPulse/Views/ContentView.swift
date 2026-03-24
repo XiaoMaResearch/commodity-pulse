@@ -18,6 +18,7 @@ struct ContentView: View {
                         HeaderPanel(
                             lastUpdated: viewModel.lastUpdated,
                             isLoading: viewModel.isLoading,
+                            isDataStale: viewModel.isDataStale,
                             onRefresh: { Task { await viewModel.refresh() } },
                             onSettings: { showingSettings = true }
                         )
@@ -28,6 +29,12 @@ struct ContentView: View {
                             }
                         }
                         .pickerStyle(.segmented)
+
+                        MarketSnapshotPanel(
+                            topGainer: viewModel.topGainer,
+                            topLoser: viewModel.topLoser,
+                            isLoadingSparklines: viewModel.isRefreshingSparklines
+                        )
 
                         if let info = viewModel.infoMessage {
                             InfoPanel(message: info)
@@ -46,6 +53,7 @@ struct ContentView: View {
                                 ForEach(Array(viewModel.displayedQuotes.enumerated()), id: \.element.id) { index, quote in
                                     CommodityCard(
                                         quote: quote,
+                                        sparklinePoints: viewModel.sparklinePoints(for: quote.commodity),
                                         isFavorite: viewModel.isFavorite(quote.commodity),
                                         onFavoriteTap: { viewModel.toggleFavorite(quote.commodity) },
                                         onOpenDetails: { viewModel.openDetails(for: quote.commodity) }
@@ -70,13 +78,17 @@ struct ContentView: View {
             .refreshable { await viewModel.refresh() }
             .task {
                 await viewModel.refresh()
+                await viewModel.refreshSparklinesIfNeeded()
                 viewModel.startAutoRefresh()
                 cardVisible = true
             }
             .onChange(of: scenePhase) { newPhase in
                 if newPhase == .active {
                     viewModel.startAutoRefresh()
-                    Task { await viewModel.refresh() }
+                    Task {
+                        await viewModel.refresh()
+                        await viewModel.refreshSparklinesIfNeeded(force: true)
+                    }
                 } else if newPhase == .background {
                     viewModel.stopAutoRefresh()
                 }
@@ -116,6 +128,7 @@ private enum DashboardTheme {
 private struct HeaderPanel: View {
     let lastUpdated: Date?
     let isLoading: Bool
+    let isDataStale: Bool
     let onRefresh: () -> Void
     let onSettings: () -> Void
 
@@ -168,6 +181,15 @@ private struct HeaderPanel: View {
             HStack(spacing: 8) {
                 Image(systemName: "clock")
                 Text("Updated \(lastUpdated?.formatted(date: .omitted, time: .standard) ?? "--")")
+                if isDataStale {
+                    Text("Stale")
+                        .font(.system(.caption2, design: .rounded, weight: .bold))
+                        .foregroundStyle(Color.black)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color(red: 0.99, green: 0.76, blue: 0.26))
+                        .clipShape(Capsule())
+                }
             }
             .font(.system(.footnote, design: .rounded, weight: .semibold))
             .foregroundStyle(Color.white.opacity(0.7))
@@ -181,6 +203,73 @@ private struct HeaderPanel: View {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .stroke(Color.white.opacity(0.18), lineWidth: 1)
         )
+    }
+}
+
+private struct MarketSnapshotPanel: View {
+    let topGainer: CommodityQuote?
+    let topLoser: CommodityQuote?
+    let isLoadingSparklines: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            SnapshotPill(
+                title: "Top Gainer",
+                quote: topGainer,
+                tint: Color(red: 0.3, green: 0.95, blue: 0.6)
+            )
+            SnapshotPill(
+                title: "Top Loser",
+                quote: topLoser,
+                tint: Color(red: 1.0, green: 0.45, blue: 0.45)
+            )
+        }
+        .overlay(alignment: .topTrailing) {
+            if isLoadingSparklines {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(.white.opacity(0.75))
+                    .padding(8)
+            }
+        }
+    }
+}
+
+private struct SnapshotPill: View {
+    let title: String
+    let quote: CommodityQuote?
+    let tint: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(.caption2, design: .rounded, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.65))
+            Text(quote?.commodity.name ?? "--")
+                .font(.system(.subheadline, design: .rounded, weight: .bold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+            Text(changeText)
+                .font(.system(.caption, design: .rounded, weight: .bold))
+                .foregroundStyle(tint)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.white.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.white.opacity(0.10), lineWidth: 1)
+        )
+    }
+
+    private var changeText: String {
+        guard let quote else { return "--" }
+        let sign = quote.changePercent >= 0 ? "+" : ""
+        return "\(sign)\(quote.changePercent.formatted(.number.precision(.fractionLength(2))))%"
     }
 }
 
@@ -274,6 +363,7 @@ private struct LoadingCards: View {
 
 private struct CommodityCard: View {
     let quote: CommodityQuote
+    let sparklinePoints: [CommodityPricePoint]
     let isFavorite: Bool
     let onFavoriteTap: () -> Void
     let onOpenDetails: () -> Void
@@ -342,7 +432,7 @@ private struct CommodityCard: View {
             }
 
             HStack {
-                TrendSparkline(quote: quote, lineColor: changeColor)
+                TrendSparkline(quote: quote, lineColor: changeColor, realPoints: sparklinePoints)
                     .frame(height: 38)
                 Spacer()
                 Button(action: onOpenDetails) {
@@ -373,8 +463,21 @@ private struct CommodityCard: View {
 private struct TrendSparkline: View {
     let quote: CommodityQuote
     let lineColor: Color
+    let realPoints: [CommodityPricePoint]
 
     private var points: [CGFloat] {
+        if realPoints.count > 1 {
+            let prices = realPoints.map(\.price)
+            let low = prices.min() ?? 0
+            let high = prices.max() ?? 0
+            let span = max(high - low, 0.0001)
+
+            return prices.map { price in
+                let normalized = ((price - low) / span) * 2 - 1
+                return CGFloat(normalized)
+            }
+        }
+
         let seed = quote.commodity.rawValue.unicodeScalars.map(\.value).reduce(0, +)
         let magnitude = min(max(abs(quote.changePercent) / 3.0, 0.3), 1.4)
 

@@ -17,6 +17,9 @@ Features implemented:
 - Per-commodity detail screen with historical chart
 - Selectable chart ranges (`1D`, `5D`, `1M`, `3M`, `1Y`)
 - Historical period stats (low, high, period change)
+- Real intraday sparklines on dashboard cards (with synthetic fallback)
+- Top gainer / top loser market snapshot panel
+- Automatic retry/backoff on transient network failures
 - In-app Settings sheet with maintenance/disclaimer
 
 ## 1) Open in Xcode (local preview)
@@ -81,7 +84,6 @@ Notes:
 ## 3) Recommended next improvements before publishing
 
 - Add selectable currency and units
-- Replace synthetic mini sparkline on cards with real intraday sparkline per commodity
 - Add unit tests for service parsing + view model cache/favorites behavior
 - Add unit tests for historical chart parsing and range selection behavior
 - Add UI tests for refresh and favorites flows

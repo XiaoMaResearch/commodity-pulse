@@ -16,6 +16,8 @@ final class CommodityViewModel: ObservableObject {
     @Published private(set) var historyPoints: [CommodityPricePoint] = []
     @Published private(set) var isHistoryLoading = false
     @Published var historyErrorMessage: String?
+    @Published private(set) var sparklinePointsByCommodity: [Commodity: [CommodityPricePoint]] = [:]
+    @Published private(set) var isRefreshingSparklines = false
 
     private struct CachePayload: Codable {
         let quotes: [CommodityQuote]
@@ -37,6 +39,7 @@ final class CommodityViewModel: ObservableObject {
 
     private var favoriteSymbols: Set<String> = []
     private var historyCache: [HistoryCacheKey: [CommodityPricePoint]] = [:]
+    private var sparklineLastUpdated: Date?
     private var autoRefreshTask: Task<Void, Never>?
 
     init() {
@@ -66,8 +69,25 @@ final class CommodityViewModel: ObservableObject {
         !favoriteSymbols.isEmpty
     }
 
+    var topGainer: CommodityQuote? {
+        quotes.max(by: { $0.changePercent < $1.changePercent })
+    }
+
+    var topLoser: CommodityQuote? {
+        quotes.min(by: { $0.changePercent < $1.changePercent })
+    }
+
+    var isDataStale: Bool {
+        guard let lastUpdated else { return true }
+        return Date().timeIntervalSince(lastUpdated) > 180
+    }
+
     func quote(for commodity: Commodity) -> CommodityQuote? {
         quotes.first { $0.commodity == commodity }
+    }
+
+    func sparklinePoints(for commodity: Commodity) -> [CommodityPricePoint] {
+        sparklinePointsByCommodity[commodity] ?? []
     }
 
     func isFavorite(_ commodity: Commodity) -> Bool {
@@ -92,12 +112,15 @@ final class CommodityViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            let newQuotes = try await service.fetchQuotes()
+            let newQuotes = try await fetchQuotesWithRetry()
             quotes = newQuotes
             lastUpdated = Date()
             errorMessage = nil
             infoMessage = nil
             persistCache()
+            Task { [weak self] in
+                await self?.refreshSparklinesIfNeeded()
+            }
         } catch {
             errorMessage = error.localizedDescription
             if !quotes.isEmpty {
@@ -148,11 +171,45 @@ final class CommodityViewModel: ObservableObject {
         await refreshSelectedHistory()
     }
 
+    func refreshSparklinesIfNeeded(force: Bool = false) async {
+        if isRefreshingSparklines { return }
+
+        if !force,
+           let last = sparklineLastUpdated,
+           Date().timeIntervalSince(last) < 240,
+           !sparklinePointsByCommodity.isEmpty {
+            return
+        }
+
+        isRefreshingSparklines = true
+        defer { isRefreshingSparklines = false }
+
+        var collected: [Commodity: [CommodityPricePoint]] = [:]
+        for commodity in Commodity.allCases {
+            do {
+                let points = try await service.fetchHistory(for: commodity, range: .oneDay)
+                let trimmed = Array(points.suffix(32))
+                if !trimmed.isEmpty {
+                    collected[commodity] = trimmed
+                }
+            } catch {
+                continue
+            }
+        }
+
+        if !collected.isEmpty {
+            sparklinePointsByCommodity.merge(collected) { _, new in new }
+            sparklineLastUpdated = Date()
+        }
+    }
+
     func clearCachedQuotes() {
         defaults.removeObject(forKey: cacheKey)
         quotes = []
         lastUpdated = nil
         errorMessage = nil
+        sparklinePointsByCommodity = [:]
+        sparklineLastUpdated = nil
         infoMessage = "Cache cleared. Pull to refresh for live quotes."
     }
 
@@ -191,6 +248,33 @@ final class CommodityViewModel: ObservableObject {
             if selectedCommodity == commodity && selectedChartRange == range {
                 historyErrorMessage = error.localizedDescription
             }
+        }
+    }
+
+    private func fetchQuotesWithRetry(maxAttempts: Int = 3) async throws -> [CommodityQuote] {
+        var lastError: Error?
+
+        for attempt in 1...maxAttempts {
+            do {
+                return try await service.fetchQuotes()
+            } catch {
+                lastError = error
+                guard shouldRetry(error), attempt < maxAttempts else { throw error }
+                let backoff = UInt64(pow(2.0, Double(attempt - 1)) * 500_000_000)
+                try? await Task.sleep(nanoseconds: backoff)
+            }
+        }
+
+        throw lastError ?? CommodityServiceError.serverError
+    }
+
+    private func shouldRetry(_ error: Error) -> Bool {
+        guard let serviceError = error as? CommodityServiceError else { return false }
+        switch serviceError {
+        case .requestTimedOut, .serverError, .networkUnavailable:
+            return true
+        case .invalidResponse, .emptyPayload, .emptyHistory:
+            return false
         }
     }
 
