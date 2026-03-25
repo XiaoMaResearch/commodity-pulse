@@ -840,6 +840,16 @@ private struct SettingsSheet: View {
                     Text("Quotes and history may be delayed and are for informational use only.")
                 }
 
+                Section("Support") {
+                    if let supportURL = ReleaseConfiguration.supportURL {
+                        Link("Support Page", destination: supportURL)
+                    }
+                    if let privacyPolicyURL = ReleaseConfiguration.privacyPolicyURL {
+                        Link("Privacy Policy", destination: privacyPolicyURL)
+                    }
+                    Text("Support Email: \(ReleaseConfiguration.supportEmail)")
+                }
+
                 Section("Preferences") {
                     Text("Auto-refresh runs every 60 seconds while app is active.")
                     Text("Manual refresh is always available from dashboard and detail chart views.")

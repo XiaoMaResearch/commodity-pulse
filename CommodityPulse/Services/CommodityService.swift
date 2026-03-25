@@ -1,6 +1,11 @@
 import Foundation
 
-enum CommodityServiceError: LocalizedError {
+protocol CommodityServicing {
+    func fetchQuotes() async throws -> [CommodityQuote]
+    func fetchHistory(for commodity: Commodity, range: CommodityChartRange) async throws -> [CommodityPricePoint]
+}
+
+enum CommodityServiceError: LocalizedError, Equatable {
     case networkUnavailable
     case requestTimedOut
     case serverError
@@ -26,7 +31,7 @@ enum CommodityServiceError: LocalizedError {
     }
 }
 
-struct CommodityService {
+struct CommodityService: CommodityServicing {
     private struct YahooResponse: Decodable {
         struct QuoteResponse: Decodable {
             let result: [Quote]

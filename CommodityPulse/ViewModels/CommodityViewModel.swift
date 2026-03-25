@@ -29,8 +29,8 @@ final class CommodityViewModel: ObservableObject {
         let range: CommodityChartRange
     }
 
-    private let service = CommodityService()
-    private let defaults = UserDefaults.standard
+    private let service: CommodityServicing
+    private let defaults: UserDefaults
     private let cacheKey = "commodityPulse.cachedQuotes.v1"
     private let favoritesKey = "commodityPulse.favoriteSymbols.v1"
     private let filterKey = "commodityPulse.filter.v1"
@@ -42,7 +42,9 @@ final class CommodityViewModel: ObservableObject {
     private var sparklineLastUpdated: Date?
     private var autoRefreshTask: Task<Void, Never>?
 
-    init() {
+    init(service: CommodityServicing = CommodityService(), defaults: UserDefaults = .standard) {
+        self.service = service
+        self.defaults = defaults
         loadFavorites()
         loadFilter()
         loadCache()

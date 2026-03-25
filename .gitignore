@@ -30,3 +30,6 @@ fastlane/test_output/
 .env
 *.key
 *.p12
+
+# Local scratch
+tmp/

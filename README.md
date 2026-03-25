@@ -21,6 +21,9 @@ Features implemented:
 - Top gainer / top loser market snapshot panel
 - Automatic retry/backoff on transient network failures
 - In-app Settings sheet with maintenance/disclaimer
+- App icon asset catalog and accent color asset catalog
+- XCTest target with service and view-model coverage
+- Privacy policy and support pages under `docs/`
 
 ## 1) Open in Xcode (local preview)
 
@@ -34,11 +37,13 @@ Features implemented:
    - Team
    - Bundle Identifier (e.g., `com.yourname.commoditypulse`)
 5. Build and run on Simulator or iPhone.
+6. Run tests with `Cmd+U` or by selecting the `CommodityPulse` scheme and choosing `Product -> Test`.
 
 Notes:
 - Data source uses Yahoo Finance quote endpoint.
 - Historical chart source uses Yahoo Finance chart endpoint.
 - Prices may be delayed based on market/data provider policies.
+- App Store support/privacy pages can be published from the `docs/` folder using GitHub Pages.
 
 ## 2) Publish to App Store (step-by-step)
 
@@ -84,7 +89,5 @@ Notes:
 ## 3) Recommended next improvements before publishing
 
 - Add selectable currency and units
-- Add unit tests for service parsing + view model cache/favorites behavior
-- Add unit tests for historical chart parsing and range selection behavior
 - Add UI tests for refresh and favorites flows
 - Replace data source with an official market data API and licensing terms suitable for production
