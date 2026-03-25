@@ -63,7 +63,7 @@ final class CommodityViewModel: ObservableObject {
             let lhsFavorite = isFavorite(lhs.commodity)
             let rhsFavorite = isFavorite(rhs.commodity)
             if lhsFavorite != rhsFavorite { return lhsFavorite && !rhsFavorite }
-            return lhs.commodity.name < rhs.commodity.name
+            return lhs.commodity.displayOrder < rhs.commodity.displayOrder
         }
     }
 
@@ -72,15 +72,7 @@ final class CommodityViewModel: ObservableObject {
     }
 
     func unavailableCommodities(in tab: CommodityTab) -> [Commodity] {
-        tab.commodities.filter { commodity in
-            guard !commodity.isSupportedByProvider else { return false }
-            switch selectedFilter {
-            case .all:
-                return true
-            case .favorites:
-                return isFavorite(commodity)
-            }
-        }
+        []
     }
 
     var hasFavorites: Bool {

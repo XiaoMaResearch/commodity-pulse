@@ -6,12 +6,16 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
     case naturalGas = "natural_gas"
     case gold = "gold"
     case silver = "silver"
-    case platinum = "platinum"
+    case copper = "copper"
+    case aluminum = "aluminum"
+    case wheat = "wheat"
     case corn = "corn"
-    case soybeans = "soybeans"
+    case cotton = "cotton"
+    case sugar = "sugar"
+    case coffee = "coffee"
 
     static var supportedCases: [Commodity] {
-        allCases.filter(\.isSupportedByProvider)
+        allCases
     }
 
     var id: String { rawValue }
@@ -23,9 +27,13 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
         case .naturalGas: return "Natural Gas"
         case .gold: return "Gold"
         case .silver: return "Silver"
-        case .platinum: return "Platinum"
+        case .copper: return "Copper"
+        case .aluminum: return "Aluminum"
+        case .wheat: return "Wheat"
         case .corn: return "Corn"
-        case .soybeans: return "Soybeans"
+        case .cotton: return "Cotton"
+        case .sugar: return "Sugar"
+        case .coffee: return "Coffee"
         }
     }
 
@@ -33,8 +41,8 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .wti, .brent: return "USD / barrel"
         case .naturalGas: return "USD / MMBtu"
-        case .gold, .silver, .platinum: return "USD / troy oz"
-        case .corn, .soybeans: return "USD / metric ton"
+        case .gold, .silver: return "USD / troy oz"
+        case .copper, .aluminum, .wheat, .corn, .cotton, .sugar, .coffee: return "USD / provider unit"
         }
     }
 
@@ -42,26 +50,8 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .wti, .brent, .naturalGas:
             return .oilAndGas
-        case .gold, .silver, .platinum, .corn, .soybeans:
+        case .gold, .silver, .copper, .aluminum, .wheat, .corn, .cotton, .sugar, .coffee:
             return .commodities
-        }
-    }
-
-    var isSupportedByProvider: Bool {
-        switch self {
-        case .platinum, .soybeans:
-            return false
-        case .wti, .brent, .naturalGas, .gold, .silver, .corn:
-            return true
-        }
-    }
-
-    var unavailableReason: String? {
-        switch self {
-        case .platinum, .soybeans:
-            return "Unavailable on the current Alpha Vantage free-tier commodity feed."
-        case .wti, .brent, .naturalGas, .gold, .silver, .corn:
-            return nil
         }
     }
 
@@ -75,10 +65,20 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
             return "NATURAL_GAS"
         case .gold, .silver:
             return "GOLD_SILVER_HISTORY"
+        case .copper:
+            return "COPPER"
+        case .aluminum:
+            return "ALUMINUM"
+        case .wheat:
+            return "WHEAT"
         case .corn:
             return "CORN"
-        case .platinum, .soybeans:
-            return nil
+        case .cotton:
+            return "COTTON"
+        case .sugar:
+            return "SUGAR"
+        case .coffee:
+            return "COFFEE"
         }
     }
 
@@ -88,7 +88,7 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
             return "GOLD"
         case .silver:
             return "SILVER"
-        case .wti, .brent, .naturalGas, .platinum, .corn, .soybeans:
+        case .wti, .brent, .naturalGas, .copper, .aluminum, .wheat, .corn, .cotton, .sugar, .coffee:
             return nil
         }
     }
@@ -97,10 +97,29 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .wti, .brent, .naturalGas, .gold, .silver:
             return "daily"
-        case .corn:
+        case .copper, .aluminum, .wheat, .corn, .cotton, .sugar, .coffee:
             return "monthly"
-        case .platinum, .soybeans:
-            return "monthly"
+        }
+    }
+
+    var unavailableReason: String? {
+        nil
+    }
+
+    var displayOrder: Int {
+        switch self {
+        case .wti: return 0
+        case .brent: return 1
+        case .naturalGas: return 2
+        case .gold: return 10
+        case .silver: return 11
+        case .copper: return 12
+        case .aluminum: return 13
+        case .wheat: return 20
+        case .corn: return 21
+        case .cotton: return 22
+        case .sugar: return 23
+        case .coffee: return 24
         }
     }
 }

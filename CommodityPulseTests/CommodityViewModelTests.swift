@@ -64,7 +64,7 @@ final class CommodityViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.historyPoints.count, 2)
     }
 
-    func testTabSplitIncludesUnavailableProviderItems() {
+    func testTabSplitShowsExpandedFreeTierCatalog() {
         let defaults = UserDefaults(suiteName: #function)!
         defaults.removePersistentDomain(forName: #function)
 
@@ -72,6 +72,7 @@ final class CommodityViewModelTests: XCTestCase {
             quotes: [
                 CommodityQuote(commodity: .wti, price: 80, change: 1.2, changePercent: 1.5, marketTime: Date()),
                 CommodityQuote(commodity: .gold, price: 2200, change: 10, changePercent: 0.5, marketTime: Date()),
+                CommodityQuote(commodity: .copper, price: 8400, change: 40, changePercent: 0.5, marketTime: Date()),
                 CommodityQuote(commodity: .corn, price: 230, change: 1, changePercent: 0.4, marketTime: Date())
             ]
         )
@@ -79,8 +80,8 @@ final class CommodityViewModelTests: XCTestCase {
         let viewModel = CommodityViewModel(service: service, defaults: defaults)
 
         XCTAssertEqual(viewModel.displayedQuotes(in: .oilAndGas).map(\.commodity), [.wti])
-        XCTAssertEqual(viewModel.displayedQuotes(in: .commodities).map(\.commodity), [.corn, .gold])
-        XCTAssertEqual(viewModel.unavailableCommodities(in: .commodities), [.platinum, .soybeans])
+        XCTAssertEqual(viewModel.displayedQuotes(in: .commodities).map(\.commodity), [.gold, .copper, .corn])
+        XCTAssertTrue(viewModel.unavailableCommodities(in: .commodities).isEmpty)
     }
 }
 
