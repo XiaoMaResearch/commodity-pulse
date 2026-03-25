@@ -22,7 +22,7 @@ final class CommodityServiceTests: XCTestCase {
         let service = CommodityService(session: makeSession(), apiKey: "test-key")
         let quotes = try await service.fetchQuotes()
 
-        XCTAssertEqual(quotes.map(\.commodity), [.wti, .brent, .naturalGas, .gold, .silver, .copper, .aluminum, .wheat, .corn, .cotton, .sugar, .coffee])
+        XCTAssertEqual(quotes.map(\.commodity), [.wti, .brent, .naturalGas, .gold, .silver])
         XCTAssertEqual(quotes.first?.price, 78.4)
         XCTAssertEqual(quotes.first?.change, 1.2, accuracy: 0.001)
     }
@@ -156,104 +156,6 @@ private func responseData(for request: URLRequest) throws -> Data {
           "data": [
             { "date": "2026-03-20", "value": "25.60" },
             { "date": "2026-03-21", "value": "25.80" }
-          ]
-        }
-        """
-    case ("COPPER", _):
-        payload = """
-        {
-          "name": "Copper",
-          "interval": "monthly",
-          "unit": "USD",
-          "data": [
-            { "date": "2025-12-01", "value": "8150.00" },
-            { "date": "2026-01-01", "value": "8230.00" },
-            { "date": "2026-02-01", "value": "8310.00" },
-            { "date": "2026-03-01", "value": "8400.00" }
-          ]
-        }
-        """
-    case ("ALUMINUM", _):
-        payload = """
-        {
-          "name": "Aluminum",
-          "interval": "monthly",
-          "unit": "USD",
-          "data": [
-            { "date": "2025-12-01", "value": "2400.00" },
-            { "date": "2026-01-01", "value": "2425.00" },
-            { "date": "2026-02-01", "value": "2450.00" },
-            { "date": "2026-03-01", "value": "2475.00" }
-          ]
-        }
-        """
-    case ("WHEAT", _):
-        payload = """
-        {
-          "name": "Wheat",
-          "interval": "monthly",
-          "unit": "USD",
-          "data": [
-            { "date": "2025-12-01", "value": "265.00" },
-            { "date": "2026-01-01", "value": "268.00" },
-            { "date": "2026-02-01", "value": "271.00" },
-            { "date": "2026-03-01", "value": "275.00" }
-          ]
-        }
-        """
-    case ("CORN", _):
-        payload = """
-        {
-          "name": "Corn",
-          "interval": "monthly",
-          "unit": "USD",
-          "data": [
-            { "date": "2025-12-01", "value": "220.20" },
-            { "date": "2026-01-01", "value": "225.80" },
-            { "date": "2026-02-01", "value": "229.10" },
-            { "date": "2026-03-01", "value": "231.40" }
-          ]
-        }
-        """
-    case ("COTTON", _):
-        payload = """
-        {
-          "name": "Cotton",
-          "interval": "monthly",
-          "unit": "USD",
-          "data": [
-            { "date": "2025-12-01", "value": "1.74" },
-            { "date": "2026-01-01", "value": "1.78" },
-            { "date": "2026-02-01", "value": "1.81" },
-            { "date": "2026-03-01", "value": "1.83" }
-          ]
-        }
-        """
-    case ("SUGAR", _):
-        payload = """
-        {
-          "name": "Sugar",
-          "interval": "monthly",
-          "unit": "USD",
-          "data": [
-            { "date": "2025-12-01", "value": "0.52" },
-            { "date": "2026-01-01", "value": "0.53" },
-            { "date": "2026-02-01", "value": "0.54" },
-            { "date": "2026-03-01", "value": "0.55" }
-          ]
-        }
-        """
-    case ("COFFEE", _):
-        payload = """
-        {
-          "name": "Coffee",
-          "interval": "monthly",
-          "unit": "USD",
-          "data": [
-            { "date": "2025-12-01", "value": "4.21" },
-            { "date": "2026-01-01", "value": "4.28" },
-            { "date": "2026-02-01", "value": "4.35" },
-            { "date": "2026-03-01", "value": "4.40" }
           ]
         }
         """

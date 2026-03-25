@@ -6,13 +6,6 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
     case naturalGas = "natural_gas"
     case gold = "gold"
     case silver = "silver"
-    case copper = "copper"
-    case aluminum = "aluminum"
-    case wheat = "wheat"
-    case corn = "corn"
-    case cotton = "cotton"
-    case sugar = "sugar"
-    case coffee = "coffee"
 
     static var supportedCases: [Commodity] {
         allCases
@@ -27,13 +20,6 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
         case .naturalGas: return "Natural Gas"
         case .gold: return "Gold"
         case .silver: return "Silver"
-        case .copper: return "Copper"
-        case .aluminum: return "Aluminum"
-        case .wheat: return "Wheat"
-        case .corn: return "Corn"
-        case .cotton: return "Cotton"
-        case .sugar: return "Sugar"
-        case .coffee: return "Coffee"
         }
     }
 
@@ -42,7 +28,6 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
         case .wti, .brent: return "USD / barrel"
         case .naturalGas: return "USD / MMBtu"
         case .gold, .silver: return "USD / troy oz"
-        case .copper, .aluminum, .wheat, .corn, .cotton, .sugar, .coffee: return "USD / provider unit"
         }
     }
 
@@ -50,7 +35,7 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .wti, .brent, .naturalGas:
             return .oilAndGas
-        case .gold, .silver, .copper, .aluminum, .wheat, .corn, .cotton, .sugar, .coffee:
+        case .gold, .silver:
             return .commodities
         }
     }
@@ -65,20 +50,6 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
             return "NATURAL_GAS"
         case .gold, .silver:
             return "GOLD_SILVER_HISTORY"
-        case .copper:
-            return "COPPER"
-        case .aluminum:
-            return "ALUMINUM"
-        case .wheat:
-            return "WHEAT"
-        case .corn:
-            return "CORN"
-        case .cotton:
-            return "COTTON"
-        case .sugar:
-            return "SUGAR"
-        case .coffee:
-            return "COFFEE"
         }
     }
 
@@ -88,18 +59,13 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
             return "GOLD"
         case .silver:
             return "SILVER"
-        case .wti, .brent, .naturalGas, .copper, .aluminum, .wheat, .corn, .cotton, .sugar, .coffee:
+        case .wti, .brent, .naturalGas:
             return nil
         }
     }
 
     var alphaVantageInterval: String {
-        switch self {
-        case .wti, .brent, .naturalGas, .gold, .silver:
-            return "daily"
-        case .copper, .aluminum, .wheat, .corn, .cotton, .sugar, .coffee:
-            return "monthly"
-        }
+        "daily"
     }
 
     var unavailableReason: String? {
@@ -113,13 +79,6 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
         case .naturalGas: return 2
         case .gold: return 10
         case .silver: return 11
-        case .copper: return 12
-        case .aluminum: return 13
-        case .wheat: return 20
-        case .corn: return 21
-        case .cotton: return 22
-        case .sugar: return 23
-        case .coffee: return 24
         }
     }
 }

@@ -6,13 +6,6 @@ This repo includes a ready-to-use SwiftUI codebase for an iOS app that tracks:
 - Natural Gas
 - Gold
 - Silver
-- Copper
-- Aluminum
-- Wheat
-- Corn
-- Cotton
-- Sugar
-- Coffee
 
 Features implemented:
 - Two market tabs: `Oil & Gas` and `Commodities`
@@ -29,7 +22,7 @@ Features implemented:
 - Top gainer / top loser market snapshot panel
 - Automatic retry/backoff on transient network failures
 - In-app Settings sheet with maintenance/disclaimer
-- Free-tier catalog expanded to the full Alpha Vantage commodity set currently used by the app
+- Free-tier catalog trimmed to 5 sustainable instruments for Alpha Vantage request limits
 - App icon asset catalog and accent color asset catalog
 - XCTest target with service and view-model coverage
 - Privacy policy and support pages under `docs/`
@@ -56,7 +49,7 @@ Features implemented:
 Notes:
 - Data source uses Alpha Vantage commodity endpoints.
 - The free-tier provider returns delayed daily commodity series, not intraday futures ticks.
-- The app still supports manual refresh and periodic refresh, but free-tier provider limits will cap how often the server can be queried successfully.
+- The free-tier build is intentionally limited to 5 instruments so one refresh stays within a workable request budget.
 - App Store support/privacy pages can be published from the `docs/` folder using GitHub Pages.
 
 ## 2) Publish to App Store (step-by-step)
