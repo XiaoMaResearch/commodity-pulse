@@ -96,7 +96,7 @@ struct CommodityService: CommodityServicing {
         var quotes: [CommodityQuote] = []
         var lastError: Error = CommodityServiceError.emptyPayload
 
-        for commodity in Commodity.allCases {
+        for commodity in Commodity.supportedCases {
             do {
                 let points = try await loadSeries(for: commodity)
                 if let quote = makeQuote(from: points, commodity: commodity) {
@@ -107,7 +107,7 @@ struct CommodityService: CommodityServicing {
             }
         }
 
-        let ordered = Commodity.allCases.compactMap { commodity in
+        let ordered = Commodity.supportedCases.compactMap { commodity in
             quotes.first(where: { $0.commodity == commodity })
         }
 
@@ -165,14 +165,18 @@ struct CommodityService: CommodityServicing {
     }
 
     private func makeSeriesURL(for commodity: Commodity) throws -> URL {
+        guard let function = commodity.alphaVantageFunction else {
+            throw CommodityServiceError.providerMessage("\(commodity.name) is not available on the current data provider.")
+        }
+
         var components = URLComponents()
         components.scheme = "https"
         components.host = "www.alphavantage.co"
         components.path = "/query"
 
         var queryItems = [
-            URLQueryItem(name: "function", value: commodity.alphaVantageFunction),
-            URLQueryItem(name: "interval", value: "daily"),
+            URLQueryItem(name: "function", value: function),
+            URLQueryItem(name: "interval", value: commodity.alphaVantageInterval),
             URLQueryItem(name: "apikey", value: apiKey)
         ]
 

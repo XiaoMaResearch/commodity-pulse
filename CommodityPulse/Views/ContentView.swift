@@ -5,7 +5,16 @@ struct ContentView: View {
     @StateObject private var viewModel = CommodityViewModel()
     @State private var cardVisible = false
     @State private var showingSettings = false
+    @State private var selectedTab: CommodityTab = .oilAndGas
     @Environment(\.scenePhase) private var scenePhase
+
+    private var visibleQuotes: [CommodityQuote] {
+        viewModel.displayedQuotes(in: selectedTab)
+    }
+
+    private var unavailableCommodities: [Commodity] {
+        viewModel.unavailableCommodities(in: selectedTab)
+    }
 
     var body: some View {
         NavigationStack {
@@ -30,9 +39,16 @@ struct ContentView: View {
                         }
                         .pickerStyle(.segmented)
 
+                        Picker("Market", selection: $selectedTab) {
+                            ForEach(CommodityTab.allCases) { tab in
+                                Text(tab.rawValue).tag(tab)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+
                         MarketSnapshotPanel(
-                            topGainer: viewModel.topGainer,
-                            topLoser: viewModel.topLoser,
+                            topGainer: viewModel.topGainer(in: selectedTab),
+                            topLoser: viewModel.topLoser(in: selectedTab),
                             isLoadingSparklines: viewModel.isRefreshingSparklines
                         )
 
@@ -44,13 +60,13 @@ struct ContentView: View {
                             ErrorPanel(message: error)
                         }
 
-                        if viewModel.isLoading && viewModel.displayedQuotes.isEmpty {
-                            LoadingCards()
-                        } else if viewModel.displayedQuotes.isEmpty {
+                        if viewModel.isLoading && visibleQuotes.isEmpty && unavailableCommodities.isEmpty {
+                            LoadingCards(count: selectedTab.commodities.count)
+                        } else if visibleQuotes.isEmpty && unavailableCommodities.isEmpty {
                             EmptyState(hasFavorites: viewModel.hasFavorites, selectedFilter: viewModel.selectedFilter)
                         } else {
                             LazyVStack(spacing: 14) {
-                                ForEach(Array(viewModel.displayedQuotes.enumerated()), id: \.element.id) { index, quote in
+                                ForEach(Array(visibleQuotes.enumerated()), id: \.element.id) { index, quote in
                                     CommodityCard(
                                         quote: quote,
                                         sparklinePoints: viewModel.sparklinePoints(for: quote.commodity),
@@ -65,6 +81,17 @@ struct ContentView: View {
                                             .delay(Double(index) * 0.06),
                                         value: cardVisible
                                     )
+                                }
+
+                                ForEach(Array(unavailableCommodities.enumerated()), id: \.element.id) { index, commodity in
+                                    UnavailableCommodityCard(commodity: commodity)
+                                        .opacity(cardVisible ? 1 : 0)
+                                        .offset(y: cardVisible ? 0 : 24)
+                                        .animation(
+                                            .spring(response: 0.55, dampingFraction: 0.82)
+                                                .delay(Double(visibleQuotes.count + index) * 0.06),
+                                            value: cardVisible
+                                        )
                                 }
                             }
                         }
@@ -139,7 +166,7 @@ private struct HeaderPanel: View {
                     Text("Commodity Pulse")
                         .font(.system(.largeTitle, design: .rounded, weight: .heavy))
                         .foregroundStyle(.white)
-                    Text("Commodity overview: oil, gas, gold, silver")
+                    Text("WTI, Brent, gas, metals, and grains")
                         .font(.system(.subheadline, design: .rounded, weight: .medium))
                         .foregroundStyle(Color.white.opacity(0.75))
                 }
@@ -349,15 +376,58 @@ private struct EmptyState: View {
 }
 
 private struct LoadingCards: View {
+    let count: Int
+
     var body: some View {
         VStack(spacing: 14) {
-            ForEach(0..<4, id: \.self) { _ in
+            ForEach(0..<max(count, 1), id: \.self) { _ in
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(Color.white.opacity(0.08))
                     .frame(height: 130)
                     .redacted(reason: .placeholder)
             }
         }
+    }
+}
+
+private struct UnavailableCommodityCard: View {
+    let commodity: Commodity
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(commodity.name)
+                        .font(.system(.headline, design: .rounded, weight: .bold))
+                        .foregroundStyle(.white)
+                    Text(commodity.unit)
+                        .font(.system(.caption, design: .rounded, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.7))
+                }
+                Spacer()
+                Text("Unavailable")
+                    .font(.system(.caption, design: .rounded, weight: .bold))
+                    .foregroundStyle(Color.black)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color(red: 0.99, green: 0.76, blue: 0.26))
+                    .clipShape(Capsule())
+            }
+
+            Text(commodity.unavailableReason ?? "This instrument is not available.")
+                .font(.system(.subheadline, design: .rounded, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.78))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(DashboardTheme.card)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        )
     }
 }
 
@@ -597,6 +667,10 @@ private struct CommodityDetailSheet: View {
                         Text("Historical data is provided for informational use only and may be delayed.")
                             .font(.system(.footnote, design: .rounded, weight: .medium))
                             .foregroundStyle(Color.white.opacity(0.7))
+                            .multilineTextAlignment(.center)
+                        Text("Current provider cadence: \(commodity.alphaVantageInterval.capitalized)")
+                            .font(.system(.footnote, design: .rounded, weight: .medium))
+                            .foregroundStyle(Color.white.opacity(0.62))
                             .multilineTextAlignment(.center)
                             .padding(.top, 8)
                     }

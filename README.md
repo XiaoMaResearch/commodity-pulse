@@ -1,12 +1,17 @@
 # Commodity Tracker iOS App (Xcode Local Preview + App Store Guide)
 
 This repo includes a ready-to-use SwiftUI codebase for an iOS app that tracks:
-- Crude Oil
+- WTI Crude Oil
+- Brent Crude Oil
 - Natural Gas
 - Gold
 - Silver
+- Corn
+- Platinum (UI placeholder on current free-tier provider)
+- Soybeans (UI placeholder on current free-tier provider)
 
 Features implemented:
+- Two market tabs: `Oil & Gas` and `Commodities`
 - Auto refresh every 1 minute
 - Manual refresh button
 - Pull-to-refresh gesture
@@ -21,6 +26,7 @@ Features implemented:
 - Top gainer / top loser market snapshot panel
 - Automatic retry/backoff on transient network failures
 - In-app Settings sheet with maintenance/disclaimer
+- Unsupported instruments are shown explicitly as unavailable instead of silently disappearing
 - App icon asset catalog and accent color asset catalog
 - XCTest target with service and view-model coverage
 - Privacy policy and support pages under `docs/`

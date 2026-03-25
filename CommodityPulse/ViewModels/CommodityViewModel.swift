@@ -67,6 +67,22 @@ final class CommodityViewModel: ObservableObject {
         }
     }
 
+    func displayedQuotes(in tab: CommodityTab) -> [CommodityQuote] {
+        displayedQuotes.filter { $0.commodity.tab == tab }
+    }
+
+    func unavailableCommodities(in tab: CommodityTab) -> [Commodity] {
+        tab.commodities.filter { commodity in
+            guard !commodity.isSupportedByProvider else { return false }
+            switch selectedFilter {
+            case .all:
+                return true
+            case .favorites:
+                return isFavorite(commodity)
+            }
+        }
+    }
+
     var hasFavorites: Bool {
         !favoriteSymbols.isEmpty
     }
@@ -77,6 +93,14 @@ final class CommodityViewModel: ObservableObject {
 
     var topLoser: CommodityQuote? {
         quotes.min(by: { $0.changePercent < $1.changePercent })
+    }
+
+    func topGainer(in tab: CommodityTab) -> CommodityQuote? {
+        displayedQuotes(in: tab).max(by: { $0.changePercent < $1.changePercent })
+    }
+
+    func topLoser(in tab: CommodityTab) -> CommodityQuote? {
+        displayedQuotes(in: tab).min(by: { $0.changePercent < $1.changePercent })
     }
 
     var isDataStale: Bool {
@@ -187,7 +211,7 @@ final class CommodityViewModel: ObservableObject {
         defer { isRefreshingSparklines = false }
 
         var collected: [Commodity: [CommodityPricePoint]] = [:]
-        for commodity in Commodity.allCases {
+        for commodity in Commodity.supportedCases {
             do {
                 let points = try await service.fetchHistory(for: commodity, range: .oneMonth)
                 let trimmed = Array(points.suffix(32))

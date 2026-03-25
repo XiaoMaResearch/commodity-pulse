@@ -9,8 +9,8 @@ final class CommodityViewModelTests: XCTestCase {
 
         let service = MockCommodityService(
             quotes: [
-                CommodityQuote(commodity: .oil, price: 80, change: 1.2, changePercent: 1.5, marketTime: Date()),
-                CommodityQuote(commodity: .gas, price: 2.5, change: -0.2, changePercent: -0.8, marketTime: Date())
+                CommodityQuote(commodity: .wti, price: 80, change: 1.2, changePercent: 1.5, marketTime: Date()),
+                CommodityQuote(commodity: .naturalGas, price: 2.5, change: -0.2, changePercent: -0.8, marketTime: Date())
             ]
         )
 
@@ -28,7 +28,7 @@ final class CommodityViewModelTests: XCTestCase {
 
         let service = MockCommodityService(
             quotes: [
-                CommodityQuote(commodity: .oil, price: 80, change: 1.2, changePercent: 1.5, marketTime: Date()),
+                CommodityQuote(commodity: .wti, price: 80, change: 1.2, changePercent: 1.5, marketTime: Date()),
                 CommodityQuote(commodity: .gold, price: 2200, change: 10, changePercent: 0.5, marketTime: Date())
             ]
         )
@@ -62,6 +62,25 @@ final class CommodityViewModelTests: XCTestCase {
         await viewModel.refreshSelectedHistory()
 
         XCTAssertEqual(viewModel.historyPoints.count, 2)
+    }
+
+    func testTabSplitIncludesUnavailableProviderItems() {
+        let defaults = UserDefaults(suiteName: #function)!
+        defaults.removePersistentDomain(forName: #function)
+
+        let service = MockCommodityService(
+            quotes: [
+                CommodityQuote(commodity: .wti, price: 80, change: 1.2, changePercent: 1.5, marketTime: Date()),
+                CommodityQuote(commodity: .gold, price: 2200, change: 10, changePercent: 0.5, marketTime: Date()),
+                CommodityQuote(commodity: .corn, price: 230, change: 1, changePercent: 0.4, marketTime: Date())
+            ]
+        )
+
+        let viewModel = CommodityViewModel(service: service, defaults: defaults)
+
+        XCTAssertEqual(viewModel.displayedQuotes(in: .oilAndGas).map(\.commodity), [.wti])
+        XCTAssertEqual(viewModel.displayedQuotes(in: .commodities).map(\.commodity), [.corn, .gold])
+        XCTAssertEqual(viewModel.unavailableCommodities(in: .commodities), [.platinum, .soybeans])
     }
 }
 
