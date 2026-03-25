@@ -20,7 +20,6 @@ Features implemented:
 - Manual refresh button
 - Pull-to-refresh gesture
 - Last updated time + market timestamp
-- Favorites (star), Favorites filter, and persisted preferences
 - Cached quotes fallback for poor connectivity
 - Enhanced loading, empty, info, and error states
 - Per-commodity detail screen with historical chart
@@ -104,5 +103,5 @@ Notes:
 ## 3) Recommended next improvements before publishing
 
 - Add selectable currency and units
-- Add UI tests for refresh and favorites flows
+- Add UI tests for refresh and tab-switching flows
 - Upgrade to a paid market data plan that supports minute-level updates and commercial distribution

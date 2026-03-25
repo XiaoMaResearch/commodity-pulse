@@ -7,9 +7,6 @@ final class CommodityViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var infoMessage: String?
     @Published private(set) var isLoading = false
-    @Published var selectedFilter: QuoteFilter = .all {
-        didSet { defaults.set(selectedFilter.rawValue, forKey: filterKey) }
-    }
 
     @Published var selectedCommodity: Commodity?
     @Published var selectedChartRange: CommodityChartRange = .oneMonth
@@ -32,12 +29,9 @@ final class CommodityViewModel: ObservableObject {
     private let service: CommodityServicing
     private let defaults: UserDefaults
     private let cacheKey = "commodityPulse.cachedQuotes.v1"
-    private let favoritesKey = "commodityPulse.favoriteSymbols.v1"
-    private let filterKey = "commodityPulse.filter.v1"
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
-    private var favoriteSymbols: Set<String> = []
     private var historyCache: [HistoryCacheKey: [CommodityPricePoint]] = [:]
     private var sparklineLastUpdated: Date?
     private var autoRefreshTask: Task<Void, Never>?
@@ -45,25 +39,12 @@ final class CommodityViewModel: ObservableObject {
     init(service: CommodityServicing = CommodityService(), defaults: UserDefaults = .standard) {
         self.service = service
         self.defaults = defaults
-        loadFavorites()
-        loadFilter()
         loadCache()
     }
 
     var displayedQuotes: [CommodityQuote] {
-        let base: [CommodityQuote]
-        switch selectedFilter {
-        case .all:
-            base = quotes
-        case .favorites:
-            base = quotes.filter { isFavorite($0.commodity) }
-        }
-
-        return base.sorted { lhs, rhs in
-            let lhsFavorite = isFavorite(lhs.commodity)
-            let rhsFavorite = isFavorite(rhs.commodity)
-            if lhsFavorite != rhsFavorite { return lhsFavorite && !rhsFavorite }
-            return lhs.commodity.displayOrder < rhs.commodity.displayOrder
+        quotes.sorted { lhs, rhs in
+            lhs.commodity.displayOrder < rhs.commodity.displayOrder
         }
     }
 
@@ -73,10 +54,6 @@ final class CommodityViewModel: ObservableObject {
 
     func unavailableCommodities(in tab: CommodityTab) -> [Commodity] {
         []
-    }
-
-    var hasFavorites: Bool {
-        !favoriteSymbols.isEmpty
     }
 
     var topGainer: CommodityQuote? {
@@ -106,20 +83,6 @@ final class CommodityViewModel: ObservableObject {
 
     func sparklinePoints(for commodity: Commodity) -> [CommodityPricePoint] {
         sparklinePointsByCommodity[commodity] ?? []
-    }
-
-    func isFavorite(_ commodity: Commodity) -> Bool {
-        favoriteSymbols.contains(commodity.rawValue)
-    }
-
-    func toggleFavorite(_ commodity: Commodity) {
-        if isFavorite(commodity) {
-            favoriteSymbols.remove(commodity.rawValue)
-        } else {
-            favoriteSymbols.insert(commodity.rawValue)
-        }
-        persistFavorites()
-        objectWillChange.send()
     }
 
     func refresh() async {
@@ -231,14 +194,6 @@ final class CommodityViewModel: ObservableObject {
         infoMessage = "Cache cleared. Pull to refresh for the latest provider snapshot."
     }
 
-    func resetPreferences() {
-        favoriteSymbols.removeAll()
-        selectedFilter = .all
-        defaults.removeObject(forKey: favoritesKey)
-        defaults.removeObject(forKey: filterKey)
-        objectWillChange.send()
-    }
-
     private func loadHistory(for commodity: Commodity, range: CommodityChartRange, force: Bool = false) async {
         let key = HistoryCacheKey(commodity: commodity, range: range)
 
@@ -310,18 +265,4 @@ final class CommodityViewModel: ObservableObject {
         infoMessage = "Loaded cached prices while waiting for the latest provider snapshot."
     }
 
-    private func persistFavorites() {
-        defaults.set(Array(favoriteSymbols), forKey: favoritesKey)
-    }
-
-    private func loadFavorites() {
-        let stored = defaults.stringArray(forKey: favoritesKey) ?? []
-        favoriteSymbols = Set(stored)
-    }
-
-    private func loadFilter() {
-        guard let raw = defaults.string(forKey: filterKey),
-              let filter = QuoteFilter(rawValue: raw) else { return }
-        selectedFilter = filter
-    }
 }

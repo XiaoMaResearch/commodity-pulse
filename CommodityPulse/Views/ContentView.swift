@@ -16,6 +16,10 @@ struct ContentView: View {
         viewModel.unavailableCommodities(in: selectedTab)
     }
 
+    private var visibleCommodityCount: Int {
+        visibleQuotes.count + unavailableCommodities.count
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -32,19 +36,10 @@ struct ContentView: View {
                             onSettings: { showingSettings = true }
                         )
 
-                        Picker("Filter", selection: $viewModel.selectedFilter) {
-                            ForEach(QuoteFilter.allCases) { filter in
-                                Text(filter.rawValue).tag(filter)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-
-                        Picker("Market", selection: $selectedTab) {
-                            ForEach(CommodityTab.allCases) { tab in
-                                Text(tab.rawValue).tag(tab)
-                            }
-                        }
-                        .pickerStyle(.segmented)
+                        MarketTabSelector(
+                            selectedTab: $selectedTab,
+                            viewModel: viewModel
+                        )
 
                         MarketSnapshotPanel(
                             topGainer: viewModel.topGainer(in: selectedTab),
@@ -60,18 +55,21 @@ struct ContentView: View {
                             ErrorPanel(message: error)
                         }
 
+                        TabSectionHeader(
+                            selectedTab: selectedTab,
+                            visibleCount: visibleCommodityCount
+                        )
+
                         if viewModel.isLoading && visibleQuotes.isEmpty && unavailableCommodities.isEmpty {
                             LoadingCards(count: selectedTab.commodities.count)
                         } else if visibleQuotes.isEmpty && unavailableCommodities.isEmpty {
-                            EmptyState(hasFavorites: viewModel.hasFavorites, selectedFilter: viewModel.selectedFilter)
+                            EmptyState()
                         } else {
                             LazyVStack(spacing: 14) {
                                 ForEach(Array(visibleQuotes.enumerated()), id: \.element.id) { index, quote in
                                     CommodityCard(
                                         quote: quote,
                                         sparklinePoints: viewModel.sparklinePoints(for: quote.commodity),
-                                        isFavorite: viewModel.isFavorite(quote.commodity),
-                                        onFavoriteTap: { viewModel.toggleFavorite(quote.commodity) },
                                         onOpenDetails: { viewModel.openDetails(for: quote.commodity) }
                                     )
                                     .opacity(cardVisible ? 1 : 0)
@@ -128,6 +126,87 @@ struct ContentView: View {
                 CommodityDetailSheet(viewModel: viewModel, commodity: commodity)
             }
         }
+    }
+}
+
+private struct MarketTabSelector: View {
+    @Binding var selectedTab: CommodityTab
+    let viewModel: CommodityViewModel
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                ForEach(CommodityTab.allCases) { tab in
+                    Button {
+                        selectedTab = tab
+                    } label: {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(tab.rawValue)
+                                .font(.system(.headline, design: .rounded, weight: .bold))
+                            Text(tabSubtitle(for: tab))
+                                .font(.system(.caption, design: .rounded, weight: .medium))
+                                .foregroundStyle(selectedTab == tab ? Color.black.opacity(0.78) : Color.white.opacity(0.68))
+                        }
+                        .foregroundStyle(selectedTab == tab ? Color.black : Color.white)
+                        .frame(width: 170, alignment: .leading)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(selectedTab == tab ? Color(red: 0.99, green: 0.76, blue: 0.26) : Color.white.opacity(0.08))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(selectedTab == tab ? Color.clear : Color.white.opacity(0.12), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    private func tabSubtitle(for tab: CommodityTab) -> String {
+        let count = viewModel.displayedQuotes(in: tab).count + viewModel.unavailableCommodities(in: tab).count
+        let noun = count == 1 ? "instrument" : "instruments"
+        return "\(count) \(noun)"
+    }
+}
+
+private struct TabSectionHeader: View {
+    let selectedTab: CommodityTab
+    let visibleCount: Int
+
+    var body: some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(selectedTab.rawValue)
+                    .font(.system(.title3, design: .rounded, weight: .bold))
+                    .foregroundStyle(.white)
+                Text(subtitle)
+                    .font(.system(.subheadline, design: .rounded, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.72))
+            }
+            Spacer()
+            if visibleCount > 3 {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.down")
+                    Text("Scroll")
+                }
+                .font(.system(.caption, design: .rounded, weight: .bold))
+                .foregroundStyle(Color.black)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Color(red: 0.99, green: 0.76, blue: 0.26))
+                .clipShape(Capsule())
+            }
+        }
+    }
+
+    private var subtitle: String {
+        let noun = visibleCount == 1 ? "instrument" : "instruments"
+        return "\(visibleCount) \(noun) available in view"
     }
 }
 
@@ -339,18 +418,15 @@ private struct ErrorPanel: View {
 }
 
 private struct EmptyState: View {
-    let hasFavorites: Bool
-    let selectedFilter: QuoteFilter
-
     var body: some View {
         VStack(spacing: 12) {
             Image(systemName: "chart.line.uptrend.xyaxis")
                 .font(.system(size: 38, weight: .semibold))
                 .foregroundStyle(Color.white.opacity(0.8))
-            Text(title)
+            Text("No Quotes Available")
                 .font(.system(.headline, design: .rounded, weight: .bold))
                 .foregroundStyle(.white)
-            Text(subtitle)
+            Text("Pull down to refresh or use the Refresh button.")
                 .font(.system(.subheadline, design: .rounded, weight: .medium))
                 .foregroundStyle(Color.white.opacity(0.75))
                 .multilineTextAlignment(.center)
@@ -361,17 +437,6 @@ private struct EmptyState: View {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(Color.white.opacity(0.08))
         )
-    }
-
-    private var title: String {
-        selectedFilter == .favorites ? "No Favorites Yet" : "No Quotes Available"
-    }
-
-    private var subtitle: String {
-        if selectedFilter == .favorites && !hasFavorites {
-            return "Tap the star on a commodity card to add it to your favorites list."
-        }
-        return "Pull down to refresh or use the Refresh button."
     }
 }
 
@@ -434,8 +499,6 @@ private struct UnavailableCommodityCard: View {
 private struct CommodityCard: View {
     let quote: CommodityQuote
     let sparklinePoints: [CommodityPricePoint]
-    let isFavorite: Bool
-    let onFavoriteTap: () -> Void
     let onOpenDetails: () -> Void
 
     private var changeColor: Color {
@@ -470,25 +533,14 @@ private struct CommodityCard: View {
                         .foregroundStyle(Color.white.opacity(0.7))
                 }
                 Spacer()
-                HStack(spacing: 8) {
-                    Button(action: onOpenDetails) {
-                        Image(systemName: "chart.line.uptrend.xyaxis")
-                            .foregroundStyle(.white)
-                            .padding(8)
-                            .background(Color.white.opacity(0.10))
-                            .clipShape(Circle())
-                    }
-                    .accessibilityLabel("Open historical chart")
-
-                    Button(action: onFavoriteTap) {
-                        Image(systemName: isFavorite ? "star.fill" : "star")
-                            .foregroundStyle(isFavorite ? Color(red: 0.99, green: 0.76, blue: 0.26) : Color.white.opacity(0.8))
-                            .padding(8)
-                            .background(Color.white.opacity(0.08))
-                            .clipShape(Circle())
-                    }
-                    .accessibilityLabel(isFavorite ? "Remove Favorite" : "Add Favorite")
+                Button(action: onOpenDetails) {
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .foregroundStyle(.white)
+                        .padding(8)
+                        .background(Color.white.opacity(0.10))
+                        .clipShape(Circle())
                 }
+                .accessibilityLabel("Open historical chart")
             }
 
             HStack(alignment: .bottom) {
@@ -939,9 +991,6 @@ private struct SettingsSheet: View {
                 Section("Maintenance") {
                     Button("Clear Cached Quotes") {
                         viewModel.clearCachedQuotes()
-                    }
-                    Button("Reset Favorites & Filter") {
-                        viewModel.resetPreferences()
                     }
                 }
             }

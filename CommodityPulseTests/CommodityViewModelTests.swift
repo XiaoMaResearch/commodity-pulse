@@ -22,25 +22,6 @@ final class CommodityViewModelTests: XCTestCase {
         XCTAssertNotNil(viewModel.lastUpdated)
     }
 
-    func testToggleFavoritePersistsAndFilters() {
-        let defaults = UserDefaults(suiteName: #function)!
-        defaults.removePersistentDomain(forName: #function)
-
-        let service = MockCommodityService(
-            quotes: [
-                CommodityQuote(commodity: .wti, price: 80, change: 1.2, changePercent: 1.5, marketTime: Date()),
-                CommodityQuote(commodity: .gold, price: 2200, change: 10, changePercent: 0.5, marketTime: Date())
-            ]
-        )
-
-        let viewModel = CommodityViewModel(service: service, defaults: defaults)
-        viewModel.toggleFavorite(.gold)
-        let restoredViewModel = CommodityViewModel(service: service, defaults: defaults)
-        restoredViewModel.selectedFilter = .favorites
-
-        XCTAssertTrue(restoredViewModel.isFavorite(.gold))
-    }
-
     func testHistoryRangeLoadsPoints() async {
         let defaults = UserDefaults(suiteName: #function)!
         defaults.removePersistentDomain(forName: #function)

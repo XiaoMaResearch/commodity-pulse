@@ -135,13 +135,6 @@ enum CommodityTab: String, CaseIterable, Identifiable {
     }
 }
 
-enum QuoteFilter: String, CaseIterable, Identifiable {
-    case all = "All"
-    case favorites = "Favorites"
-
-    var id: String { rawValue }
-}
-
 struct CommodityQuote: Identifiable, Equatable, Codable {
     let commodity: Commodity
     let price: Double
