@@ -9,7 +9,9 @@ enum CommodityServiceError: LocalizedError, Equatable {
     case networkUnavailable
     case requestTimedOut
     case serverError
+    case httpStatus(Int)
     case invalidResponse
+    case decodingFailed
     case emptyPayload
     case emptyHistory
 
@@ -21,8 +23,12 @@ enum CommodityServiceError: LocalizedError, Equatable {
             return "Request timed out. Please try again."
         case .serverError:
             return "The price service is temporarily unavailable."
+        case .httpStatus(let code):
+            return "The price service returned HTTP \(code)."
         case .invalidResponse:
-            return "Unable to parse quote data right now."
+            return "The price service returned an unexpected response."
+        case .decodingFailed:
+            return "The price data format changed and could not be parsed."
         case .emptyPayload:
             return "No quote data was returned."
         case .emptyHistory:
@@ -32,6 +38,11 @@ enum CommodityServiceError: LocalizedError, Equatable {
 }
 
 struct CommodityService: CommodityServicing {
+    private let hosts = [
+        "query1.finance.yahoo.com",
+        "query2.finance.yahoo.com"
+    ]
+
     private struct YahooResponse: Decodable {
         struct QuoteResponse: Decodable {
             let result: [Quote]
@@ -77,16 +88,16 @@ struct CommodityService: CommodityServicing {
 
     func fetchQuotes() async throws -> [CommodityQuote] {
         let symbols = Commodity.allCases.map(\.rawValue).joined(separator: ",")
-        guard let url = URL(string: "https://query1.finance.yahoo.com/v7/finance/quote?symbols=\(symbols)") else {
-            throw CommodityServiceError.invalidResponse
-        }
-        let data = try await loadData(from: url)
+        let data = try await loadData(
+            path: "/v7/finance/quote",
+            queryItems: [URLQueryItem(name: "symbols", value: symbols)]
+        )
 
         let decoded: YahooResponse
         do {
             decoded = try JSONDecoder().decode(YahooResponse.self, from: data)
         } catch {
-            throw CommodityServiceError.invalidResponse
+            throw CommodityServiceError.decodingFailed
         }
         let mapped: [CommodityQuote] = decoded.quoteResponse.result.compactMap { quote in
             guard let commodity = Commodity(rawValue: quote.symbol),
@@ -115,24 +126,20 @@ struct CommodityService: CommodityServicing {
     }
 
     func fetchHistory(for commodity: Commodity, range: CommodityChartRange) async throws -> [CommodityPricePoint] {
-        var components = URLComponents(string: "https://query1.finance.yahoo.com/v8/finance/chart/\(commodity.rawValue)")
-        components?.queryItems = [
+        let data = try await loadData(
+            path: "/v8/finance/chart/\(commodity.rawValue)",
+            queryItems: [
             URLQueryItem(name: "range", value: range.queryRange),
             URLQueryItem(name: "interval", value: range.queryInterval),
             URLQueryItem(name: "includePrePost", value: "false"),
             URLQueryItem(name: "events", value: "div,splits")
-        ]
-
-        guard let url = components?.url else {
-            throw CommodityServiceError.invalidResponse
-        }
-
-        let data = try await loadData(from: url)
+            ]
+        )
         let decoded: YahooChartResponse
         do {
             decoded = try JSONDecoder().decode(YahooChartResponse.self, from: data)
         } catch {
-            throw CommodityServiceError.invalidResponse
+            throw CommodityServiceError.decodingFailed
         }
 
         guard let result = decoded.chart.result?.first,
@@ -156,10 +163,46 @@ struct CommodityService: CommodityServicing {
         return points
     }
 
-    private func loadData(from url: URL) async throws -> Data {
+    private func loadData(path: String, queryItems: [URLQueryItem]) async throws -> Data {
+        var lastError: Error = CommodityServiceError.serverError
+
+        for host in hosts {
+            var components = URLComponents()
+            components.scheme = "https"
+            components.host = host
+            components.path = path
+            components.queryItems = queryItems
+
+            guard let url = components.url else {
+                lastError = CommodityServiceError.invalidResponse
+                continue
+            }
+
+            do {
+                return try await performRequest(url: url)
+            } catch {
+                lastError = error
+                // Retry on alternate host for upstream/network/provider failures only.
+                switch error {
+                case CommodityServiceError.networkUnavailable,
+                     CommodityServiceError.requestTimedOut,
+                     CommodityServiceError.serverError,
+                     CommodityServiceError.httpStatus:
+                    continue
+                default:
+                    throw error
+                }
+            }
+        }
+
+        throw lastError
+    }
+
+    private func performRequest(url: URL) async throws -> Data {
         var request = URLRequest(url: url)
         request.timeoutInterval = 15
         request.setValue("CommodityPulse/1.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let data: Data
         let response: URLResponse
@@ -178,10 +221,25 @@ struct CommodityService: CommodityServicing {
             throw CommodityServiceError.serverError
         }
 
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw CommodityServiceError.serverError
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw CommodityServiceError.invalidResponse
         }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+#if DEBUG
+            let bodyPreview = String(data: data.prefix(200), encoding: .utf8) ?? "<non-text body>"
+            print("CommodityService non-200 from \(url.host ?? "unknown") status=\(httpResponse.statusCode) preview=\(bodyPreview)")
+#endif
+            throw CommodityServiceError.httpStatus(httpResponse.statusCode)
+        }
+
+#if DEBUG
+        if let bodyPreview = String(data: data.prefix(200), encoding: .utf8) {
+            print("CommodityService response from \(url.host ?? "unknown") status=\(httpResponse.statusCode) preview=\(bodyPreview)")
+        } else {
+            print("CommodityService response from \(url.host ?? "unknown") status=\(httpResponse.statusCode) bytes=\(data.count)")
+        }
+#endif
         return data
     }
 }
