@@ -273,9 +273,9 @@ final class CommodityViewModel: ObservableObject {
     private func shouldRetry(_ error: Error) -> Bool {
         guard let serviceError = error as? CommodityServiceError else { return false }
         switch serviceError {
-        case .requestTimedOut, .serverError, .networkUnavailable:
+        case .requestTimedOut, .serverError, .networkUnavailable, .httpStatus:
             return true
-        case .invalidResponse, .emptyPayload, .emptyHistory:
+        case .invalidResponse, .decodingFailed, .emptyPayload, .emptyHistory:
             return false
         }
     }
