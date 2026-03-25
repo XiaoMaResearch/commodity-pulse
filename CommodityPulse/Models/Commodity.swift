@@ -24,26 +24,18 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    var alphaVantageFunction: String? {
+    var fmpSymbol: String {
         switch self {
-        case .wti:
-            return "WTI"
-        case .gold:
-            return "GOLD_SILVER_HISTORY"
+        case .wti: return "CLUSD"
+        case .gold: return "GCUSD"
         }
     }
 
-    var alphaVantageSymbol: String? {
+    var providerCadenceLabel: String {
         switch self {
-        case .wti:
-            return nil
-        case .gold:
-            return "GOLD"
+        case .wti, .gold:
+            return "Real-time quotes, EOD history"
         }
-    }
-
-    var alphaVantageInterval: String {
-        "daily"
     }
 
     var unavailableReason: String? {

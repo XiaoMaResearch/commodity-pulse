@@ -21,7 +21,7 @@ enum CommodityServiceError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .apiKeyMissing:
-            return "Add your Alpha Vantage API key in the Xcode scheme environment or ReleaseConfiguration before refreshing."
+            return "Add your FMP API key in the Xcode scheme environment or ReleaseConfiguration before refreshing."
         case .networkUnavailable:
             return "No internet connection. Please check your network and try again."
         case .requestTimedOut:
@@ -39,7 +39,7 @@ enum CommodityServiceError: LocalizedError, Equatable {
         case .emptyHistory:
             return "No historical price data is available for this period."
         case .rateLimited:
-            return "Alpha Vantage free-tier limit reached. Wait and try again later."
+            return "FMP free-tier limit reached. Wait and try again later."
         case .providerMessage(let message):
             return message
         }
@@ -79,7 +79,7 @@ struct CommodityService: CommodityServicing {
 
     init(
         session: URLSession = .shared,
-        apiKey: String = ReleaseConfiguration.alphaVantageAPIKey,
+        apiKey: String = ReleaseConfiguration.fmpAPIKey,
         cacheMaxAge: TimeInterval = 55
     ) {
         self.session = session
@@ -93,26 +93,19 @@ struct CommodityService: CommodityServicing {
             throw CommodityServiceError.apiKeyMissing
         }
 
-        var quotes: [CommodityQuote] = []
-        var lastError: Error = CommodityServiceError.emptyPayload
+        let url = try makeBatchQuotesURL()
+        let data = try await performRequest(url: url)
+        let items = try decodeArrayPayload(from: data)
 
-        for commodity in Commodity.supportedCases {
-            do {
-                let points = try await loadSeries(for: commodity)
-                if let quote = makeQuote(from: points, commodity: commodity) {
-                    quotes.append(quote)
-                }
-            } catch {
-                lastError = error
+        let ordered: [CommodityQuote] = Commodity.supportedCases.compactMap { commodity -> CommodityQuote? in
+            guard let item = items.first(where: { quoteSymbol(from: $0) == commodity.fmpSymbol }) else {
+                return nil
             }
-        }
-
-        let ordered = Commodity.supportedCases.compactMap { commodity in
-            quotes.first(where: { $0.commodity == commodity })
+            return makeQuote(from: item, commodity: commodity)
         }
 
         if ordered.isEmpty {
-            throw lastError
+            throw CommodityServiceError.emptyPayload
         }
         return ordered
     }
@@ -136,12 +129,11 @@ struct CommodityService: CommodityServicing {
             return cached
         }
 
-        let url = try makeSeriesURL(for: commodity)
+        let url = try makeHistoryURL(for: commodity)
 
         do {
             let data = try await performRequest(url: url)
-            let root = try decodeRootObject(from: data)
-            let points = try decodeSeries(from: root)
+            let points = try decodeSeries(from: data)
 
             if points.isEmpty {
                 throw CommodityServiceError.emptyHistory
@@ -164,27 +156,12 @@ struct CommodityService: CommodityServicing {
         }
     }
 
-    private func makeSeriesURL(for commodity: Commodity) throws -> URL {
-        guard let function = commodity.alphaVantageFunction else {
-            throw CommodityServiceError.providerMessage("\(commodity.name) is not available on the current data provider.")
-        }
-
+    private func makeBatchQuotesURL() throws -> URL {
         var components = URLComponents()
         components.scheme = "https"
-        components.host = "www.alphavantage.co"
-        components.path = "/query"
-
-        var queryItems = [
-            URLQueryItem(name: "function", value: function),
-            URLQueryItem(name: "interval", value: commodity.alphaVantageInterval),
-            URLQueryItem(name: "apikey", value: apiKey)
-        ]
-
-        if let symbol = commodity.alphaVantageSymbol {
-            queryItems.append(URLQueryItem(name: "symbol", value: symbol))
-        }
-
-        components.queryItems = queryItems
+        components.host = "financialmodelingprep.com"
+        components.path = "/stable/batch-commodity-quotes"
+        components.queryItems = [URLQueryItem(name: "apikey", value: apiKey)]
 
         guard let url = components.url else {
             throw CommodityServiceError.invalidResponse
@@ -192,7 +169,23 @@ struct CommodityService: CommodityServicing {
         return url
     }
 
-    private func decodeRootObject(from data: Data) throws -> [String: Any] {
+    private func makeHistoryURL(for commodity: Commodity) throws -> URL {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "financialmodelingprep.com"
+        components.path = "/stable/historical-price-eod/light"
+        components.queryItems = [
+            URLQueryItem(name: "symbol", value: commodity.fmpSymbol),
+            URLQueryItem(name: "apikey", value: apiKey)
+        ]
+
+        guard let url = components.url else {
+            throw CommodityServiceError.invalidResponse
+        }
+        return url
+    }
+
+    private func decodeJSONArray(from data: Data) throws -> [Any] {
         let jsonObject: Any
         do {
             jsonObject = try JSONSerialization.jsonObject(with: data)
@@ -200,21 +193,15 @@ struct CommodityService: CommodityServicing {
             throw CommodityServiceError.decodingFailed
         }
 
-        guard let root = jsonObject as? [String: Any] else {
+        if let root = jsonObject as? [String: Any],
+           let providerError = providerError(from: root) {
+            throw providerError
+        }
+
+        guard let array = jsonObject as? [Any] else {
             throw CommodityServiceError.invalidResponse
         }
-
-        if let note = root["Note"] as? String {
-            throw mapProviderMessage(note)
-        }
-        if let information = root["Information"] as? String {
-            throw mapProviderMessage(information)
-        }
-        if let errorMessage = root["Error Message"] as? String {
-            throw mapProviderMessage(errorMessage)
-        }
-
-        return root
+        return array
     }
 
     private func mapProviderMessage(_ message: String) -> CommodityServiceError {
@@ -228,24 +215,64 @@ struct CommodityService: CommodityServicing {
             return .apiKeyMissing
         }
 
-        if lowered.contains("call frequency") || lowered.contains("rate limit") || lowered.contains("requests per day") {
+        if lowered.contains("call frequency")
+            || lowered.contains("rate limit")
+            || lowered.contains("requests per day")
+            || lowered.contains("too many requests")
+            || lowered.contains("limit reached")
+            || lowered.contains("request limit")
+            || lowered.contains("usage limit") {
             return .rateLimited
         }
 
         return .providerMessage(normalized)
     }
 
-    private func decodeSeries(from root: [String: Any]) throws -> [CommodityPricePoint] {
-        guard let items = root["data"] as? [[String: Any]] else {
-#if DEBUG
-            print("CommodityService unexpected Alpha Vantage payload keys=\(Array(root.keys).sorted())")
-#endif
+    private func decodeArrayPayload(from data: Data) throws -> [[String: Any]] {
+        let items = try decodeJSONArray(from: data)
+            .compactMap { $0 as? [String: Any] }
+
+        if items.isEmpty {
+            throw CommodityServiceError.emptyPayload
+        }
+
+        return items
+    }
+
+    private func decodeSeries(from data: Data) throws -> [CommodityPricePoint] {
+        let jsonObject: Any
+        do {
+            jsonObject = try JSONSerialization.jsonObject(with: data)
+        } catch {
             throw CommodityServiceError.decodingFailed
         }
 
-        let points = items.compactMap { item -> CommodityPricePoint? in
+        let rawItems: [[String: Any]]
+
+        if let items = jsonObject as? [[String: Any]] {
+            rawItems = items
+        } else if let root = jsonObject as? [String: Any] {
+            if let providerError = providerError(from: root) {
+                throw providerError
+            }
+
+            if let historical = root["historical"] as? [[String: Any]] {
+                rawItems = historical
+            } else if let dataItems = root["data"] as? [[String: Any]] {
+                rawItems = dataItems
+            } else {
+#if DEBUG
+                print("CommodityService unexpected FMP payload keys=\(Array(root.keys).sorted())")
+#endif
+                throw CommodityServiceError.decodingFailed
+            }
+        } else {
+            throw CommodityServiceError.invalidResponse
+        }
+
+        let points = rawItems.compactMap { item -> CommodityPricePoint? in
             guard let dateString = item["date"] as? String,
-                  let rawValue = item["value"],
+                  let rawValue = item["price"] ?? item["close"] ?? item["value"],
                   let price = parseNumericValue(rawValue),
                   let date = parseDate(dateString) else {
                 return nil
@@ -258,21 +285,54 @@ struct CommodityService: CommodityServicing {
         return points
     }
 
-    private func makeQuote(from points: [CommodityPricePoint], commodity: Commodity) -> CommodityQuote? {
-        guard let latest = points.last else {
+    private func providerError(from root: [String: Any]) -> CommodityServiceError? {
+        let keys = ["Error Message", "error", "Error", "message", "Message", "Information", "Note"]
+        for key in keys {
+            if let message = root[key] as? String,
+               !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return mapProviderMessage(message)
+            }
+        }
+        return nil
+    }
+
+    private func quoteSymbol(from item: [String: Any]) -> String? {
+        if let symbol = item["symbol"] as? String {
+            return symbol.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return nil
+    }
+
+    private func makeQuote(from item: [String: Any], commodity: Commodity) -> CommodityQuote? {
+        guard let rawPrice = item["price"],
+              let price = parseNumericValue(rawPrice) else {
             return nil
         }
 
-        let previous = points.dropLast().last ?? latest
-        let change = latest.price - previous.price
-        let changePercent = previous.price == 0 ? 0 : (change / previous.price) * 100
+        let change: Double = {
+            guard let rawChange = item["change"] else { return 0 }
+            return parseNumericValue(rawChange) ?? 0
+        }()
+
+        let changePercent: Double = {
+            if let rawChangesPercentage = item["changesPercentage"],
+               let parsed = parseNumericValue(rawChangesPercentage) {
+                return parsed
+            }
+            let previousClose = price - change
+            guard previousClose != 0 else { return 0 }
+            return (change / previousClose) * 100
+        }()
+
+        let marketTime = parseTimestamp(item["timestamp"])
+            ?? parseDate(item["date"] as? String ?? "")
 
         return CommodityQuote(
             commodity: commodity,
-            price: latest.price,
+            price: price,
             change: change,
             changePercent: changePercent,
-            marketTime: latest.date
+            marketTime: marketTime
         )
     }
 
@@ -335,11 +395,28 @@ struct CommodityService: CommodityServicing {
         }
 
         if let stringValue = rawValue as? String {
-            return Double(stringValue)
+            let sanitized = stringValue
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "%", with: "")
+                .replacingOccurrences(of: ",", with: "")
+                .replacingOccurrences(of: "(", with: "")
+                .replacingOccurrences(of: ")", with: "")
+                .replacingOccurrences(of: "$", with: "")
+            return Double(sanitized)
         }
 
         if let numberValue = rawValue as? NSNumber {
             return numberValue.doubleValue
+        }
+
+        return nil
+    }
+
+    private func parseTimestamp(_ rawValue: Any?) -> Date? {
+        guard let rawValue else { return nil }
+
+        if let timeInterval = parseNumericValue(rawValue) {
+            return Date(timeIntervalSince1970: timeInterval)
         }
 
         return nil

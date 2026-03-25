@@ -63,7 +63,7 @@ final class CommodityServiceTests: XCTestCase {
         MockURLProtocol.handler = { request in
             let data = """
             {
-              "Note": "Thank you for using Alpha Vantage! Our standard API rate limit is 25 requests per day."
+              "message": "Request limit reached. Please upgrade your plan."
             }
             """.data(using: .utf8)!
 
@@ -91,38 +91,46 @@ final class CommodityServiceTests: XCTestCase {
 
 private func responseData(for request: URLRequest) throws -> Data {
     guard let url = request.url,
-          let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-          let function = components.queryItems?.first(where: { $0.name == "function" })?.value else {
+          let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
         throw URLError(.badURL)
     }
 
     let symbol = components.queryItems?.first(where: { $0.name == "symbol" })?.value
 
     let payload: String
-    switch (function, symbol) {
-    case ("WTI", _):
+    switch (url.path, symbol) {
+    case ("/stable/batch-commodity-quotes", _):
         payload = """
-        {
-          "name": "WTI",
-          "interval": "daily",
-          "unit": "USD",
-          "data": [
-            { "date": "2026-03-20", "value": "77.20" },
-            { "date": "2026-03-21", "value": "78.40" }
-          ]
-        }
+        [
+          {
+            "symbol": "CLUSD",
+            "price": 78.4,
+            "change": 1.2,
+            "changesPercentage": 1.55,
+            "timestamp": 1774051200
+          },
+          {
+            "symbol": "GCUSD",
+            "price": 2341.0,
+            "change": 13.0,
+            "changesPercentage": 0.56,
+            "timestamp": 1774051200
+          }
+        ]
         """
-    case ("GOLD_SILVER_HISTORY", "GOLD"):
+    case ("/stable/historical-price-eod/light", "CLUSD"):
         payload = """
-        {
-          "name": "Gold",
-          "interval": "daily",
-          "unit": "USD",
-          "data": [
-            { "date": "2026-03-20", "value": "2328.00" },
-            { "date": "2026-03-21", "value": "2341.00" }
-          ]
-        }
+        [
+          { "date": "2026-03-20", "price": "77.20" },
+          { "date": "2026-03-21", "price": "78.40" }
+        ]
+        """
+    case ("/stable/historical-price-eod/light", "GCUSD"):
+        payload = """
+        [
+          { "date": "2026-03-20", "price": "2328.00" },
+          { "date": "2026-03-21", "price": "2341.00" }
+        ]
         """
     default:
         throw URLError(.badServerResponse)

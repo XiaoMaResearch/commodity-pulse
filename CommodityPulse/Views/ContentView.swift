@@ -603,7 +603,7 @@ private struct CommodityDetailSheet: View {
                             .font(.system(.footnote, design: .rounded, weight: .medium))
                             .foregroundStyle(Color.white.opacity(0.7))
                             .multilineTextAlignment(.center)
-                        Text("Current provider cadence: \(commodity.alphaVantageInterval.capitalized)")
+                        Text("Current provider cadence: \(commodity.providerCadenceLabel)")
                             .font(.system(.footnote, design: .rounded, weight: .medium))
                             .foregroundStyle(Color.white.opacity(0.62))
                             .multilineTextAlignment(.center)
@@ -851,7 +851,7 @@ private struct SettingsSheet: View {
             List {
                 Section("Data") {
                     Text("Source: \(ReleaseConfiguration.marketDataProviderName) commodity endpoints.")
-                    Text("The free-tier source provides delayed daily snapshots rather than intraday futures ticks.")
+                    Text("The free-tier source uses batch commodity quotes and end-of-day historical pricing.")
                     Text("Quotes and history may be delayed and are for informational use only.")
                 }
 
@@ -869,7 +869,7 @@ private struct SettingsSheet: View {
                     Toggle("Auto Refresh Every 60 Seconds", isOn: $viewModel.isAutoRefreshEnabled)
                     Text("Auto refresh is off by default on the free plan.")
                     Text("When enabled, refresh runs every 60 seconds while the app is active.")
-                    Text("On the free plan, provider limits may prevent every refresh from reaching the server.")
+                    Text("On the free plan, provider limits and licensing terms still matter even with the higher daily quota.")
                     Text("Manual refresh is always available from dashboard and detail chart views.")
                 }
 
