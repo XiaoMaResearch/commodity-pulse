@@ -105,7 +105,7 @@ private struct SectionHeader: View {
     var body: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("WTI Crude Oil")
+                Text("WTI + Gold")
                     .font(.system(.title3, design: .rounded, weight: .bold))
                     .foregroundStyle(.white)
                 Text(subtitle)
@@ -169,7 +169,7 @@ private struct HeaderPanel: View {
                     Text("Commodity Pulse")
                         .font(.system(.largeTitle, design: .rounded, weight: .heavy))
                         .foregroundStyle(.white)
-                    Text("Single-instrument free-tier tracker")
+                    Text("Free-tier WTI and gold tracker")
                         .font(.system(.subheadline, design: .rounded, weight: .medium))
                         .foregroundStyle(Color.white.opacity(0.75))
                 }

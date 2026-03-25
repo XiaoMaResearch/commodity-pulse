@@ -2,6 +2,7 @@
 
 This repo includes a ready-to-use SwiftUI codebase for an iOS app that tracks:
 - WTI Crude Oil
+- Gold
 
 Features implemented:
 - Auto refresh every 1 minute
@@ -16,7 +17,7 @@ Features implemented:
 - Daily trend sparklines on dashboard cards (with synthetic fallback)
 - Automatic retry/backoff on transient network failures
 - In-app Settings sheet with maintenance/disclaimer
-- Free-tier catalog trimmed to a single sustainable instrument for Alpha Vantage request limits
+- Free-tier catalog trimmed to two sustainable instruments for Alpha Vantage request limits
 - App icon asset catalog and accent color asset catalog
 - XCTest target with service and view-model coverage
 - Privacy policy and support pages under `docs/`
@@ -43,7 +44,7 @@ Features implemented:
 Notes:
 - Data source uses Alpha Vantage commodity endpoints.
 - The free-tier provider returns delayed daily commodity series, not intraday futures ticks.
-- The free-tier build is intentionally limited to one instrument so refreshes remain workable within the daily request cap.
+- The free-tier build is intentionally limited to WTI and Gold so refreshes remain workable within the daily request cap.
 - App Store support/privacy pages can be published from the `docs/` folder using GitHub Pages.
 
 ## 2) Publish to App Store (step-by-step)

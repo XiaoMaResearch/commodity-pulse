@@ -2,6 +2,7 @@ import Foundation
 
 enum Commodity: String, CaseIterable, Identifiable, Codable {
     case wti = "wti"
+    case gold = "gold"
 
     static var supportedCases: [Commodity] {
         allCases
@@ -12,12 +13,14 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
     var name: String {
         switch self {
         case .wti: return "WTI Crude Oil"
+        case .gold: return "Gold"
         }
     }
 
     var unit: String {
         switch self {
         case .wti: return "USD / barrel"
+        case .gold: return "USD / troy oz"
         }
     }
 
@@ -25,6 +28,8 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .wti:
             return "WTI"
+        case .gold:
+            return "GOLD_SILVER_HISTORY"
         }
     }
 
@@ -32,6 +37,8 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .wti:
             return nil
+        case .gold:
+            return "GOLD"
         }
     }
 
@@ -46,6 +53,7 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
     var displayOrder: Int {
         switch self {
         case .wti: return 0
+        case .gold: return 1
         }
     }
 }

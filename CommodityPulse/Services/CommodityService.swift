@@ -21,7 +21,7 @@ enum CommodityServiceError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .apiKeyMissing:
-            return "Add your Alpha Vantage API key in ReleaseConfiguration.swift before refreshing."
+            return "Add your Alpha Vantage API key in the Xcode scheme environment or ReleaseConfiguration before refreshing."
         case .networkUnavailable:
             return "No internet connection. Please check your network and try again."
         case .requestTimedOut:

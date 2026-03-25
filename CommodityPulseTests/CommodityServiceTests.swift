@@ -22,9 +22,10 @@ final class CommodityServiceTests: XCTestCase {
         let service = CommodityService(session: makeSession(), apiKey: "test-key")
         let quotes = try await service.fetchQuotes()
 
-        XCTAssertEqual(quotes.map(\.commodity), [.wti])
+        XCTAssertEqual(quotes.map(\.commodity), [.wti, .gold])
         XCTAssertEqual(quotes.first?.price, 78.4)
         XCTAssertEqual(quotes.first?.change, 1.2, accuracy: 0.001)
+        XCTAssertEqual(quotes.last?.price, 2341.0)
     }
 
     func testFetchHistoryParsesPoints() async throws {
@@ -108,6 +109,18 @@ private func responseData(for request: URLRequest) throws -> Data {
           "data": [
             { "date": "2026-03-20", "value": "77.20" },
             { "date": "2026-03-21", "value": "78.40" }
+          ]
+        }
+        """
+    case ("GOLD_SILVER_HISTORY", "GOLD"):
+        payload = """
+        {
+          "name": "Gold",
+          "interval": "daily",
+          "unit": "USD",
+          "data": [
+            { "date": "2026-03-20", "value": "2328.00" },
+            { "date": "2026-03-21", "value": "2341.00" }
           ]
         }
         """
