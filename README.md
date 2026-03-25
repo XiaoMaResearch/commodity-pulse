@@ -37,8 +37,10 @@ Features implemented:
    - Team
    - Bundle Identifier (e.g., `com.yourname.commoditypulse`)
 5. Add your Alpha Vantage API key:
-   - Open `/Users/manqingguo/Documents/New project/CommodityPulse/App/ReleaseConfiguration.swift`
-   - Paste your free API key into `alphaVantageAPIKeyOverride`
+   - In Xcode, go to `Product -> Scheme -> Edit Scheme`
+   - Select `Run -> Arguments`
+   - Under `Environment Variables`, add `ALPHA_VANTAGE_API_KEY`
+   - Set its value to your free Alpha Vantage API key
 6. Build and run on Simulator or iPhone.
 7. Run tests with `Cmd+U` or by selecting the `CommodityPulse` scheme and choosing `Product -> Test`.
 

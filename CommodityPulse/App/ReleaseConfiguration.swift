@@ -8,8 +8,8 @@ enum ReleaseConfiguration {
     static let privacyPolicyURL = URL(string: "https://xiaomaresearch.github.io/commodity-pulse/privacy-policy.html")
     static let supportEmail = "maxiaodage1@gmail.com"
 
-    // Paste your Alpha Vantage API key here for local/device builds if you are not
-    // injecting ALPHA_VANTAGE_API_KEY via Xcode build settings or scheme environment.
+    // Keep this empty in source control. Prefer injecting ALPHA_VANTAGE_API_KEY
+    // through your Xcode scheme environment variables for local/device builds.
     private static let alphaVantageAPIKeyOverride = ""
 
     static var alphaVantageAPIKey: String {
