@@ -2,13 +2,8 @@
 
 This repo includes a ready-to-use SwiftUI codebase for an iOS app that tracks:
 - WTI Crude Oil
-- Brent Crude Oil
-- Natural Gas
-- Gold
-- Silver
 
 Features implemented:
-- Two market tabs: `Oil & Gas` and `Commodities`
 - Auto refresh every 1 minute
 - Manual refresh button
 - Pull-to-refresh gesture
@@ -19,10 +14,9 @@ Features implemented:
 - Selectable chart ranges (`1D`, `5D`, `1M`, `3M`, `1Y`)
 - Historical period stats (low, high, period change)
 - Daily trend sparklines on dashboard cards (with synthetic fallback)
-- Top gainer / top loser market snapshot panel
 - Automatic retry/backoff on transient network failures
 - In-app Settings sheet with maintenance/disclaimer
-- Free-tier catalog trimmed to 5 sustainable instruments for Alpha Vantage request limits
+- Free-tier catalog trimmed to a single sustainable instrument for Alpha Vantage request limits
 - App icon asset catalog and accent color asset catalog
 - XCTest target with service and view-model coverage
 - Privacy policy and support pages under `docs/`
@@ -49,7 +43,7 @@ Features implemented:
 Notes:
 - Data source uses Alpha Vantage commodity endpoints.
 - The free-tier provider returns delayed daily commodity series, not intraday futures ticks.
-- The free-tier build is intentionally limited to 5 instruments so one refresh stays within a workable request budget.
+- The free-tier build is intentionally limited to one instrument so refreshes remain workable within the daily request cap.
 - App Store support/privacy pages can be published from the `docs/` folder using GitHub Pages.
 
 ## 2) Publish to App Store (step-by-step)
@@ -96,5 +90,5 @@ Notes:
 ## 3) Recommended next improvements before publishing
 
 - Add selectable currency and units
-- Add UI tests for refresh and tab-switching flows
+- Add UI tests for refresh and chart flows
 - Upgrade to a paid market data plan that supports minute-level updates and commercial distribution

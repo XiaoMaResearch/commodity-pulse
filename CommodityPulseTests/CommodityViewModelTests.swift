@@ -9,15 +9,14 @@ final class CommodityViewModelTests: XCTestCase {
 
         let service = MockCommodityService(
             quotes: [
-                CommodityQuote(commodity: .wti, price: 80, change: 1.2, changePercent: 1.5, marketTime: Date()),
-                CommodityQuote(commodity: .naturalGas, price: 2.5, change: -0.2, changePercent: -0.8, marketTime: Date())
+                CommodityQuote(commodity: .wti, price: 80, change: 1.2, changePercent: 1.5, marketTime: Date())
             ]
         )
 
         let viewModel = CommodityViewModel(service: service, defaults: defaults)
         await viewModel.refresh()
 
-        XCTAssertEqual(viewModel.displayedQuotes.count, 2)
+        XCTAssertEqual(viewModel.displayedQuotes.count, 1)
         XCTAssertNil(viewModel.errorMessage)
         XCTAssertNotNil(viewModel.lastUpdated)
     }
@@ -33,35 +32,31 @@ final class CommodityViewModelTests: XCTestCase {
 
         let service = MockCommodityService(
             quotes: [
-                CommodityQuote(commodity: .silver, price: 25, change: 0.2, changePercent: 1.0, marketTime: Date())
+                CommodityQuote(commodity: .wti, price: 80, change: 1.2, changePercent: 1.5, marketTime: Date())
             ],
-            history: [.silver: history]
+            history: [.wti: history]
         )
 
         let viewModel = CommodityViewModel(service: service, defaults: defaults)
-        viewModel.selectedCommodity = .silver
+        viewModel.selectedCommodity = .wti
         await viewModel.refreshSelectedHistory()
 
         XCTAssertEqual(viewModel.historyPoints.count, 2)
     }
 
-    func testTabSplitShowsReducedFreeTierCatalog() {
+    func testDisplayedQuotesShowsSingleCommodityCatalog() {
         let defaults = UserDefaults(suiteName: #function)!
         defaults.removePersistentDomain(forName: #function)
 
         let service = MockCommodityService(
             quotes: [
-                CommodityQuote(commodity: .wti, price: 80, change: 1.2, changePercent: 1.5, marketTime: Date()),
-                CommodityQuote(commodity: .gold, price: 2200, change: 10, changePercent: 0.5, marketTime: Date()),
-                CommodityQuote(commodity: .silver, price: 26, change: 0.4, changePercent: 1.5, marketTime: Date())
+                CommodityQuote(commodity: .wti, price: 80, change: 1.2, changePercent: 1.5, marketTime: Date())
             ]
         )
 
         let viewModel = CommodityViewModel(service: service, defaults: defaults)
 
-        XCTAssertEqual(viewModel.displayedQuotes(in: .oilAndGas).map(\.commodity), [.wti])
-        XCTAssertEqual(viewModel.displayedQuotes(in: .commodities).map(\.commodity), [.gold, .silver])
-        XCTAssertTrue(viewModel.unavailableCommodities(in: .commodities).isEmpty)
+        XCTAssertEqual(viewModel.displayedQuotes.map(\.commodity), [.wti])
     }
 
     func testAutoRefreshDefaultsOffAndPersists() {

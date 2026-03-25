@@ -22,7 +22,7 @@ final class CommodityServiceTests: XCTestCase {
         let service = CommodityService(session: makeSession(), apiKey: "test-key")
         let quotes = try await service.fetchQuotes()
 
-        XCTAssertEqual(quotes.map(\.commodity), [.wti, .brent, .naturalGas, .gold, .silver])
+        XCTAssertEqual(quotes.map(\.commodity), [.wti])
         XCTAssertEqual(quotes.first?.price, 78.4)
         XCTAssertEqual(quotes.first?.change, 1.2, accuracy: 0.001)
     }
@@ -108,54 +108,6 @@ private func responseData(for request: URLRequest) throws -> Data {
           "data": [
             { "date": "2026-03-20", "value": "77.20" },
             { "date": "2026-03-21", "value": "78.40" }
-          ]
-        }
-        """
-    case ("BRENT", _):
-        payload = """
-        {
-          "name": "Brent",
-          "interval": "daily",
-          "unit": "USD",
-          "data": [
-            { "date": "2026-03-20", "value": "80.90" },
-            { "date": "2026-03-21", "value": "81.70" }
-          ]
-        }
-        """
-    case ("NATURAL_GAS", _):
-        payload = """
-        {
-          "name": "Natural Gas",
-          "interval": "daily",
-          "unit": "USD",
-          "data": [
-            { "date": "2026-03-20", "value": "2.10" },
-            { "date": "2026-03-21", "value": "2.15" }
-          ]
-        }
-        """
-    case ("GOLD_SILVER_HISTORY", "GOLD"):
-        payload = """
-        {
-          "name": "Gold",
-          "interval": "daily",
-          "unit": "USD",
-          "data": [
-            { "date": "2026-03-20", "value": "2190.20" },
-            { "date": "2026-03-21", "value": "2199.50" }
-          ]
-        }
-        """
-    case ("GOLD_SILVER_HISTORY", "SILVER"):
-        payload = """
-        {
-          "name": "Silver",
-          "interval": "daily",
-          "unit": "USD",
-          "data": [
-            { "date": "2026-03-20", "value": "25.60" },
-            { "date": "2026-03-21", "value": "25.80" }
           ]
         }
         """

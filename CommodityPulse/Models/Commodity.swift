@@ -2,10 +2,6 @@ import Foundation
 
 enum Commodity: String, CaseIterable, Identifiable, Codable {
     case wti = "wti"
-    case brent = "brent"
-    case naturalGas = "natural_gas"
-    case gold = "gold"
-    case silver = "silver"
 
     static var supportedCases: [Commodity] {
         allCases
@@ -16,27 +12,12 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
     var name: String {
         switch self {
         case .wti: return "WTI Crude Oil"
-        case .brent: return "Brent Crude Oil"
-        case .naturalGas: return "Natural Gas"
-        case .gold: return "Gold"
-        case .silver: return "Silver"
         }
     }
 
     var unit: String {
         switch self {
-        case .wti, .brent: return "USD / barrel"
-        case .naturalGas: return "USD / MMBtu"
-        case .gold, .silver: return "USD / troy oz"
-        }
-    }
-
-    var tab: CommodityTab {
-        switch self {
-        case .wti, .brent, .naturalGas:
-            return .oilAndGas
-        case .gold, .silver:
-            return .commodities
+        case .wti: return "USD / barrel"
         }
     }
 
@@ -44,22 +25,12 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .wti:
             return "WTI"
-        case .brent:
-            return "BRENT"
-        case .naturalGas:
-            return "NATURAL_GAS"
-        case .gold, .silver:
-            return "GOLD_SILVER_HISTORY"
         }
     }
 
     var alphaVantageSymbol: String? {
         switch self {
-        case .gold:
-            return "GOLD"
-        case .silver:
-            return "SILVER"
-        case .wti, .brent, .naturalGas:
+        case .wti:
             return nil
         }
     }
@@ -75,22 +46,7 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
     var displayOrder: Int {
         switch self {
         case .wti: return 0
-        case .brent: return 1
-        case .naturalGas: return 2
-        case .gold: return 10
-        case .silver: return 11
         }
-    }
-}
-
-enum CommodityTab: String, CaseIterable, Identifiable {
-    case oilAndGas = "Oil & Gas"
-    case commodities = "Commodities"
-
-    var id: String { rawValue }
-
-    var commodities: [Commodity] {
-        Commodity.allCases.filter { $0.tab == self }
     }
 }
 

@@ -5,19 +5,14 @@ struct ContentView: View {
     @StateObject private var viewModel = CommodityViewModel()
     @State private var cardVisible = false
     @State private var showingSettings = false
-    @State private var selectedTab: CommodityTab = .oilAndGas
     @Environment(\.scenePhase) private var scenePhase
 
     private var visibleQuotes: [CommodityQuote] {
-        viewModel.displayedQuotes(in: selectedTab)
-    }
-
-    private var unavailableCommodities: [Commodity] {
-        viewModel.unavailableCommodities(in: selectedTab)
+        viewModel.displayedQuotes
     }
 
     private var visibleCommodityCount: Int {
-        visibleQuotes.count + unavailableCommodities.count
+        visibleQuotes.count
     }
 
     var body: some View {
@@ -36,17 +31,6 @@ struct ContentView: View {
                             onSettings: { showingSettings = true }
                         )
 
-                        MarketTabSelector(
-                            selectedTab: $selectedTab,
-                            viewModel: viewModel
-                        )
-
-                        MarketSnapshotPanel(
-                            topGainer: viewModel.topGainer(in: selectedTab),
-                            topLoser: viewModel.topLoser(in: selectedTab),
-                            isLoadingSparklines: viewModel.isRefreshingSparklines
-                        )
-
                         if let info = viewModel.infoMessage {
                             InfoPanel(message: info)
                         }
@@ -55,14 +39,11 @@ struct ContentView: View {
                             ErrorPanel(message: error)
                         }
 
-                        TabSectionHeader(
-                            selectedTab: selectedTab,
-                            visibleCount: visibleCommodityCount
-                        )
+                        SectionHeader(visibleCount: visibleCommodityCount)
 
-                        if viewModel.isLoading && visibleQuotes.isEmpty && unavailableCommodities.isEmpty {
-                            LoadingCards(count: selectedTab.commodities.count)
-                        } else if visibleQuotes.isEmpty && unavailableCommodities.isEmpty {
+                        if viewModel.isLoading && visibleQuotes.isEmpty {
+                            LoadingCards(count: Commodity.allCases.count)
+                        } else if visibleQuotes.isEmpty {
                             EmptyState()
                         } else {
                             LazyVStack(spacing: 14) {
@@ -74,20 +55,9 @@ struct ContentView: View {
                                     )
                                     .opacity(cardVisible ? 1 : 0)
                                     .offset(y: cardVisible ? 0 : 24)
-                                    .animation(
-                                        .spring(response: 0.55, dampingFraction: 0.82)
-                                            .delay(Double(index) * 0.06),
-                                        value: cardVisible
-                                    )
-                                }
-
-                                ForEach(Array(unavailableCommodities.enumerated()), id: \.element.id) { index, commodity in
-                                    UnavailableCommodityCard(commodity: commodity)
-                                        .opacity(cardVisible ? 1 : 0)
-                                        .offset(y: cardVisible ? 0 : 24)
                                         .animation(
                                             .spring(response: 0.55, dampingFraction: 0.82)
-                                                .delay(Double(visibleQuotes.count + index) * 0.06),
+                                            .delay(Double(index) * 0.06),
                                             value: cardVisible
                                         )
                                 }
@@ -129,59 +99,13 @@ struct ContentView: View {
     }
 }
 
-private struct MarketTabSelector: View {
-    @Binding var selectedTab: CommodityTab
-    let viewModel: CommodityViewModel
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
-                ForEach(CommodityTab.allCases) { tab in
-                    Button {
-                        selectedTab = tab
-                    } label: {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(tab.rawValue)
-                                .font(.system(.headline, design: .rounded, weight: .bold))
-                            Text(tabSubtitle(for: tab))
-                                .font(.system(.caption, design: .rounded, weight: .medium))
-                                .foregroundStyle(selectedTab == tab ? Color.black.opacity(0.78) : Color.white.opacity(0.68))
-                        }
-                        .foregroundStyle(selectedTab == tab ? Color.black : Color.white)
-                        .frame(width: 170, alignment: .leading)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .fill(selectedTab == tab ? Color(red: 0.99, green: 0.76, blue: 0.26) : Color.white.opacity(0.08))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .stroke(selectedTab == tab ? Color.clear : Color.white.opacity(0.12), lineWidth: 1)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.vertical, 2)
-        }
-    }
-
-    private func tabSubtitle(for tab: CommodityTab) -> String {
-        let count = viewModel.displayedQuotes(in: tab).count + viewModel.unavailableCommodities(in: tab).count
-        let noun = count == 1 ? "instrument" : "instruments"
-        return "\(count) \(noun)"
-    }
-}
-
-private struct TabSectionHeader: View {
-    let selectedTab: CommodityTab
+private struct SectionHeader: View {
     let visibleCount: Int
 
     var body: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(selectedTab.rawValue)
+                Text("WTI Crude Oil")
                     .font(.system(.title3, design: .rounded, weight: .bold))
                     .foregroundStyle(.white)
                 Text(subtitle)
@@ -245,7 +169,7 @@ private struct HeaderPanel: View {
                     Text("Commodity Pulse")
                         .font(.system(.largeTitle, design: .rounded, weight: .heavy))
                         .foregroundStyle(.white)
-                    Text("WTI, Brent, natural gas, gold, and silver")
+                    Text("Single-instrument free-tier tracker")
                         .font(.system(.subheadline, design: .rounded, weight: .medium))
                         .foregroundStyle(Color.white.opacity(0.75))
                 }
@@ -452,47 +376,6 @@ private struct LoadingCards: View {
                     .redacted(reason: .placeholder)
             }
         }
-    }
-}
-
-private struct UnavailableCommodityCard: View {
-    let commodity: Commodity
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(commodity.name)
-                        .font(.system(.headline, design: .rounded, weight: .bold))
-                        .foregroundStyle(.white)
-                    Text(commodity.unit)
-                        .font(.system(.caption, design: .rounded, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.7))
-                }
-                Spacer()
-                Text("Unavailable")
-                    .font(.system(.caption, design: .rounded, weight: .bold))
-                    .foregroundStyle(Color.black)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color(red: 0.99, green: 0.76, blue: 0.26))
-                    .clipShape(Capsule())
-            }
-
-            Text(commodity.unavailableReason ?? "This instrument is not available.")
-                .font(.system(.subheadline, design: .rounded, weight: .medium))
-                .foregroundStyle(Color.white.opacity(0.78))
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(DashboardTheme.card)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.white.opacity(0.12), lineWidth: 1)
-        )
     }
 }
 

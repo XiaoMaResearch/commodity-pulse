@@ -60,28 +60,12 @@ final class CommodityViewModel: ObservableObject {
         }
     }
 
-    func displayedQuotes(in tab: CommodityTab) -> [CommodityQuote] {
-        displayedQuotes.filter { $0.commodity.tab == tab }
-    }
-
-    func unavailableCommodities(in tab: CommodityTab) -> [Commodity] {
-        []
-    }
-
     var topGainer: CommodityQuote? {
         quotes.max(by: { $0.changePercent < $1.changePercent })
     }
 
     var topLoser: CommodityQuote? {
         quotes.min(by: { $0.changePercent < $1.changePercent })
-    }
-
-    func topGainer(in tab: CommodityTab) -> CommodityQuote? {
-        displayedQuotes(in: tab).max(by: { $0.changePercent < $1.changePercent })
-    }
-
-    func topLoser(in tab: CommodityTab) -> CommodityQuote? {
-        displayedQuotes(in: tab).min(by: { $0.changePercent < $1.changePercent })
     }
 
     var isDataStale: Bool {
