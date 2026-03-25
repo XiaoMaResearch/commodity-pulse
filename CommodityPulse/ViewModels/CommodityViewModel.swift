@@ -7,6 +7,16 @@ final class CommodityViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var infoMessage: String?
     @Published private(set) var isLoading = false
+    @Published var isAutoRefreshEnabled = false {
+        didSet {
+            defaults.set(isAutoRefreshEnabled, forKey: autoRefreshEnabledKey)
+            if isAutoRefreshEnabled {
+                startAutoRefresh()
+            } else {
+                stopAutoRefresh()
+            }
+        }
+    }
 
     @Published var selectedCommodity: Commodity?
     @Published var selectedChartRange: CommodityChartRange = .oneMonth
@@ -29,6 +39,7 @@ final class CommodityViewModel: ObservableObject {
     private let service: CommodityServicing
     private let defaults: UserDefaults
     private let cacheKey = "commodityPulse.cachedQuotes.v1"
+    private let autoRefreshEnabledKey = "commodityPulse.autoRefreshEnabled.v1"
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
@@ -39,6 +50,7 @@ final class CommodityViewModel: ObservableObject {
     init(service: CommodityServicing = CommodityService(), defaults: UserDefaults = .standard) {
         self.service = service
         self.defaults = defaults
+        loadAutoRefreshPreference()
         loadCache()
     }
 
@@ -111,12 +123,14 @@ final class CommodityViewModel: ObservableObject {
     }
 
     func startAutoRefresh() {
+        guard isAutoRefreshEnabled else { return }
         guard autoRefreshTask == nil else { return }
 
         autoRefreshTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 60 * 1_000_000_000)
                 guard !Task.isCancelled else { return }
+                guard self?.isAutoRefreshEnabled == true else { return }
                 await self?.refresh()
             }
         }
@@ -263,6 +277,14 @@ final class CommodityViewModel: ObservableObject {
         quotes = payload.quotes
         lastUpdated = payload.lastUpdated
         infoMessage = "Loaded cached prices while waiting for the latest provider snapshot."
+    }
+
+    private func loadAutoRefreshPreference() {
+        guard defaults.object(forKey: autoRefreshEnabledKey) != nil else {
+            isAutoRefreshEnabled = false
+            return
+        }
+        isAutoRefreshEnabled = defaults.bool(forKey: autoRefreshEnabledKey)
     }
 
 }

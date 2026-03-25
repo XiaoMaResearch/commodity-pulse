@@ -983,7 +983,9 @@ private struct SettingsSheet: View {
                 }
 
                 Section("Preferences") {
-                    Text("Auto-refresh runs every 60 seconds while app is active.")
+                    Toggle("Auto Refresh Every 60 Seconds", isOn: $viewModel.isAutoRefreshEnabled)
+                    Text("Auto refresh is off by default on the free plan.")
+                    Text("When enabled, refresh runs every 60 seconds while the app is active.")
                     Text("On the free plan, provider limits may prevent every refresh from reaching the server.")
                     Text("Manual refresh is always available from dashboard and detail chart views.")
                 }

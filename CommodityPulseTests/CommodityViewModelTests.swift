@@ -64,6 +64,19 @@ final class CommodityViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.displayedQuotes(in: .commodities).map(\.commodity), [.gold, .copper, .corn])
         XCTAssertTrue(viewModel.unavailableCommodities(in: .commodities).isEmpty)
     }
+
+    func testAutoRefreshDefaultsOffAndPersists() {
+        let defaults = UserDefaults(suiteName: #function)!
+        defaults.removePersistentDomain(forName: #function)
+
+        let viewModel = CommodityViewModel(service: MockCommodityService(), defaults: defaults)
+        XCTAssertFalse(viewModel.isAutoRefreshEnabled)
+
+        viewModel.isAutoRefreshEnabled = true
+
+        let restoredViewModel = CommodityViewModel(service: MockCommodityService(), defaults: defaults)
+        XCTAssertTrue(restoredViewModel.isAutoRefreshEnabled)
+    }
 }
 
 private struct MockCommodityService: CommodityServicing {
