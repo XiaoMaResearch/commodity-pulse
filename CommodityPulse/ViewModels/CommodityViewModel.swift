@@ -118,7 +118,7 @@ final class CommodityViewModel: ObservableObject {
             quotes = newQuotes
             lastUpdated = Date()
             errorMessage = nil
-            infoMessage = nil
+            infoMessage = "Using \(ReleaseConfiguration.marketDataProviderName) free-tier commodity snapshots."
             persistCache()
             Task { [weak self] in
                 await self?.refreshSparklinesIfNeeded()
@@ -189,7 +189,7 @@ final class CommodityViewModel: ObservableObject {
         var collected: [Commodity: [CommodityPricePoint]] = [:]
         for commodity in Commodity.allCases {
             do {
-                let points = try await service.fetchHistory(for: commodity, range: .oneDay)
+                let points = try await service.fetchHistory(for: commodity, range: .oneMonth)
                 let trimmed = Array(points.suffix(32))
                 if !trimmed.isEmpty {
                     collected[commodity] = trimmed
@@ -212,7 +212,7 @@ final class CommodityViewModel: ObservableObject {
         errorMessage = nil
         sparklinePointsByCommodity = [:]
         sparklineLastUpdated = nil
-        infoMessage = "Cache cleared. Pull to refresh for live quotes."
+        infoMessage = "Cache cleared. Pull to refresh for the latest provider snapshot."
     }
 
     func resetPreferences() {
@@ -275,7 +275,7 @@ final class CommodityViewModel: ObservableObject {
         switch serviceError {
         case .requestTimedOut, .serverError, .networkUnavailable, .httpStatus:
             return true
-        case .invalidResponse, .decodingFailed, .emptyPayload, .emptyHistory:
+        case .apiKeyMissing, .invalidResponse, .decodingFailed, .emptyPayload, .emptyHistory, .rateLimited, .providerMessage:
             return false
         }
     }
@@ -291,7 +291,7 @@ final class CommodityViewModel: ObservableObject {
               let payload = try? decoder.decode(CachePayload.self, from: data) else { return }
         quotes = payload.quotes
         lastUpdated = payload.lastUpdated
-        infoMessage = "Loaded cached prices while fetching live updates."
+        infoMessage = "Loaded cached prices while waiting for the latest provider snapshot."
     }
 
     private func persistFavorites() {

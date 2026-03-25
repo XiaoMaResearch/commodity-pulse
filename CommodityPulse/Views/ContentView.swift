@@ -139,7 +139,7 @@ private struct HeaderPanel: View {
                     Text("Commodity Pulse")
                         .font(.system(.largeTitle, design: .rounded, weight: .heavy))
                         .foregroundStyle(.white)
-                    Text("Live overview: oil, gas, gold, silver")
+                    Text("Commodity overview: oil, gas, gold, silver")
                         .font(.system(.subheadline, design: .rounded, weight: .medium))
                         .foregroundStyle(Color.white.opacity(0.75))
                 }
@@ -383,6 +383,11 @@ private struct CommodityCard: View {
         return "\(sign)\(change) (\(sign)\(percent)%)"
     }
 
+    private var snapshotText: String {
+        guard let marketTime = quote.marketTime else { return "--" }
+        return marketTime.formatted(date: .abbreviated, time: .omitted)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
@@ -421,7 +426,7 @@ private struct CommodityCard: View {
                     Text("$\(priceText)")
                         .font(.system(.title2, design: .rounded, weight: .heavy))
                         .foregroundStyle(.white)
-                    Text(quote.marketTime?.formatted(date: .omitted, time: .shortened) ?? "--")
+                    Text(snapshotText)
                         .font(.system(.caption2, design: .rounded, weight: .medium))
                         .foregroundStyle(Color.white.opacity(0.6))
                 }
@@ -749,7 +754,7 @@ private struct CommodityHistoryChart: View {
     private var xAxisFormat: Date.FormatStyle {
         switch selectedRange {
         case .oneDay:
-            return .dateTime.hour().minute()
+            return .dateTime.month(.abbreviated).day()
         case .fiveDays:
             return .dateTime.weekday(.abbreviated)
         case .oneMonth, .threeMonths:
@@ -836,7 +841,8 @@ private struct SettingsSheet: View {
         NavigationStack {
             List {
                 Section("Data") {
-                    Text("Source: Yahoo Finance quote and chart endpoints.")
+                    Text("Source: \(ReleaseConfiguration.marketDataProviderName) commodity endpoints.")
+                    Text("The free-tier source provides delayed daily snapshots rather than intraday futures ticks.")
                     Text("Quotes and history may be delayed and are for informational use only.")
                 }
 
@@ -852,6 +858,7 @@ private struct SettingsSheet: View {
 
                 Section("Preferences") {
                     Text("Auto-refresh runs every 60 seconds while app is active.")
+                    Text("On the free plan, provider limits may prevent every refresh from reaching the server.")
                     Text("Manual refresh is always available from dashboard and detail chart views.")
                 }
 

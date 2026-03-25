@@ -1,10 +1,10 @@
 # Commodity Tracker iOS App (Xcode Local Preview + App Store Guide)
 
 This repo includes a ready-to-use SwiftUI codebase for an iOS app that tracks:
-- Crude Oil (`CL=F`)
-- Natural Gas (`NG=F`)
-- Gold (`GC=F`)
-- Silver (`SI=F`)
+- Crude Oil
+- Natural Gas
+- Gold
+- Silver
 
 Features implemented:
 - Auto refresh every 1 minute
@@ -17,7 +17,7 @@ Features implemented:
 - Per-commodity detail screen with historical chart
 - Selectable chart ranges (`1D`, `5D`, `1M`, `3M`, `1Y`)
 - Historical period stats (low, high, period change)
-- Real intraday sparklines on dashboard cards (with synthetic fallback)
+- Daily trend sparklines on dashboard cards (with synthetic fallback)
 - Top gainer / top loser market snapshot panel
 - Automatic retry/backoff on transient network failures
 - In-app Settings sheet with maintenance/disclaimer
@@ -36,13 +36,16 @@ Features implemented:
 4. In project settings, set:
    - Team
    - Bundle Identifier (e.g., `com.yourname.commoditypulse`)
-5. Build and run on Simulator or iPhone.
-6. Run tests with `Cmd+U` or by selecting the `CommodityPulse` scheme and choosing `Product -> Test`.
+5. Add your Alpha Vantage API key:
+   - Open `/Users/manqingguo/Documents/New project/CommodityPulse/App/ReleaseConfiguration.swift`
+   - Paste your free API key into `alphaVantageAPIKeyOverride`
+6. Build and run on Simulator or iPhone.
+7. Run tests with `Cmd+U` or by selecting the `CommodityPulse` scheme and choosing `Product -> Test`.
 
 Notes:
-- Data source uses Yahoo Finance quote endpoint.
-- Historical chart source uses Yahoo Finance chart endpoint.
-- Prices may be delayed based on market/data provider policies.
+- Data source uses Alpha Vantage commodity endpoints.
+- The free-tier provider returns delayed daily commodity series, not intraday futures ticks.
+- The app still supports manual refresh and periodic refresh, but free-tier provider limits will cap how often the server can be queried successfully.
 - App Store support/privacy pages can be published from the `docs/` folder using GitHub Pages.
 
 ## 2) Publish to App Store (step-by-step)
@@ -90,4 +93,4 @@ Notes:
 
 - Add selectable currency and units
 - Add UI tests for refresh and favorites flows
-- Replace data source with an official market data API and licensing terms suitable for production
+- Upgrade to a paid market data plan that supports minute-level updates and commercial distribution

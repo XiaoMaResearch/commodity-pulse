@@ -14,82 +14,31 @@ final class CommodityServiceTests: XCTestCase {
 
     func testFetchQuotesParsesOrderedCommodities() async throws {
         MockURLProtocol.handler = { request in
-            let data = """
-            {
-              "quoteResponse": {
-                "result": [
-                  {
-                    "symbol": "GC=F",
-                    "regularMarketPrice": 2199.5,
-                    "regularMarketChange": 12.3,
-                    "regularMarketChangePercent": 0.56,
-                    "regularMarketTime": 1710000000
-                  },
-                  {
-                    "symbol": "CL=F",
-                    "regularMarketPrice": 78.4,
-                    "regularMarketChange": -1.2,
-                    "regularMarketChangePercent": -1.51,
-                    "regularMarketTime": 1710000000
-                  },
-                  {
-                    "symbol": "NG=F",
-                    "regularMarketPrice": 2.15,
-                    "regularMarketChange": 0.03,
-                    "regularMarketChangePercent": 1.4,
-                    "regularMarketTime": 1710000000
-                  },
-                  {
-                    "symbol": "SI=F",
-                    "regularMarketPrice": 25.8,
-                    "regularMarketChange": 0.2,
-                    "regularMarketChangePercent": 0.8,
-                    "regularMarketTime": 1710000000
-                  }
-                ]
-              }
-            }
-            """.data(using: .utf8)!
+            let data = try responseData(for: request)
 
             return try MockURLProtocol.successResponse(for: request, data: data)
         }
 
-        let service = CommodityService(session: makeSession())
+        let service = CommodityService(session: makeSession(), apiKey: "test-key")
         let quotes = try await service.fetchQuotes()
 
         XCTAssertEqual(quotes.map(\.commodity), [.oil, .gas, .gold, .silver])
         XCTAssertEqual(quotes.first?.price, 78.4)
+        XCTAssertEqual(quotes.first?.change, 1.2, accuracy: 0.001)
     }
 
     func testFetchHistoryParsesPoints() async throws {
         MockURLProtocol.handler = { request in
-            let data = """
-            {
-              "chart": {
-                "result": [
-                  {
-                    "timestamp": [1710000000, 1710003600, 1710007200],
-                    "indicators": {
-                      "quote": [
-                        {
-                          "close": [78.2, 78.5, 78.1]
-                        }
-                      ]
-                    }
-                  }
-                ]
-              }
-            }
-            """.data(using: .utf8)!
+            let data = try responseData(for: request)
 
             return try MockURLProtocol.successResponse(for: request, data: data)
         }
 
-        let service = CommodityService(session: makeSession())
+        let service = CommodityService(session: makeSession(), apiKey: "test-key")
         let points = try await service.fetchHistory(for: .oil, range: .oneDay)
 
-        XCTAssertEqual(points.count, 3)
-        XCTAssertEqual(points.last?.price, 78.1)
+        XCTAssertEqual(points.count, 2)
+        XCTAssertEqual(points.last?.price, 78.4)
     }
 
     func testFetchQuotesMapsNetworkError() async {
@@ -97,7 +46,7 @@ final class CommodityServiceTests: XCTestCase {
             throw URLError(.notConnectedToInternet)
         }
 
-        let service = CommodityService(session: makeSession())
+        let service = CommodityService(session: makeSession(), apiKey: "test-key")
 
         do {
             _ = try await service.fetchQuotes()
@@ -109,11 +58,103 @@ final class CommodityServiceTests: XCTestCase {
         }
     }
 
+    func testFetchQuotesMapsRateLimitNote() async {
+        MockURLProtocol.handler = { request in
+            let data = """
+            {
+              "Note": "Thank you for using Alpha Vantage! Our standard API rate limit is 25 requests per day."
+            }
+            """.data(using: .utf8)!
+
+            return try MockURLProtocol.successResponse(for: request, data: data)
+        }
+
+        let service = CommodityService(session: makeSession(), apiKey: "test-key", cacheMaxAge: 0)
+
+        do {
+            _ = try await service.fetchQuotes()
+            XCTFail("Expected rateLimited error")
+        } catch let error as CommodityServiceError {
+            XCTAssertEqual(error, .rateLimited)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     private func makeSession() -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
         return URLSession(configuration: configuration)
     }
+}
+
+private func responseData(for request: URLRequest) throws -> Data {
+    guard let url = request.url,
+          let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          let function = components.queryItems?.first(where: { $0.name == "function" })?.value else {
+        throw URLError(.badURL)
+    }
+
+    let symbol = components.queryItems?.first(where: { $0.name == "symbol" })?.value
+
+    let payload: String
+    switch (function, symbol) {
+    case ("WTI", _):
+        payload = """
+        {
+          "name": "WTI",
+          "interval": "daily",
+          "unit": "USD",
+          "data": [
+            { "date": "2026-03-20", "value": "77.20" },
+            { "date": "2026-03-21", "value": "78.40" }
+          ]
+        }
+        """
+    case ("NATURAL_GAS", _):
+        payload = """
+        {
+          "name": "Natural Gas",
+          "interval": "daily",
+          "unit": "USD",
+          "data": [
+            { "date": "2026-03-20", "value": "2.10" },
+            { "date": "2026-03-21", "value": "2.15" }
+          ]
+        }
+        """
+    case ("GOLD_SILVER_HISTORY", "GOLD"):
+        payload = """
+        {
+          "name": "Gold",
+          "interval": "daily",
+          "unit": "USD",
+          "data": [
+            { "date": "2026-03-20", "value": "2190.20" },
+            { "date": "2026-03-21", "value": "2199.50" }
+          ]
+        }
+        """
+    case ("GOLD_SILVER_HISTORY", "SILVER"):
+        payload = """
+        {
+          "name": "Silver",
+          "interval": "daily",
+          "unit": "USD",
+          "data": [
+            { "date": "2026-03-20", "value": "25.60" },
+            { "date": "2026-03-21", "value": "25.80" }
+          ]
+        }
+        """
+    default:
+        throw URLError(.badServerResponse)
+    }
+
+    guard let data = payload.data(using: .utf8) else {
+        throw URLError(.cannotDecodeRawData)
+    }
+    return data
 }
 
 private final class MockURLProtocol: URLProtocol {

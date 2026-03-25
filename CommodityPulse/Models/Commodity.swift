@@ -25,6 +25,28 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
         case .silver: return "USD / troy oz"
         }
     }
+
+    var alphaVantageFunction: String {
+        switch self {
+        case .oil:
+            return "WTI"
+        case .gas:
+            return "NATURAL_GAS"
+        case .gold, .silver:
+            return "GOLD_SILVER_HISTORY"
+        }
+    }
+
+    var alphaVantageSymbol: String? {
+        switch self {
+        case .gold:
+            return "GOLD"
+        case .silver:
+            return "SILVER"
+        case .oil, .gas:
+            return nil
+        }
+    }
 }
 
 enum QuoteFilter: String, CaseIterable, Identifiable {
@@ -53,23 +75,18 @@ enum CommodityChartRange: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var queryRange: String {
+    var requestedPointCount: Int {
         switch self {
-        case .oneDay: return "1d"
-        case .fiveDays: return "5d"
-        case .oneMonth: return "1mo"
-        case .threeMonths: return "3mo"
-        case .oneYear: return "1y"
-        }
-    }
-
-    var queryInterval: String {
-        switch self {
-        case .oneDay: return "5m"
-        case .fiveDays: return "30m"
-        case .oneMonth: return "1d"
-        case .threeMonths: return "1d"
-        case .oneYear: return "1wk"
+        case .oneDay:
+            return 2
+        case .fiveDays:
+            return 5
+        case .oneMonth:
+            return 22
+        case .threeMonths:
+            return 66
+        case .oneYear:
+            return 260
         }
     }
 }

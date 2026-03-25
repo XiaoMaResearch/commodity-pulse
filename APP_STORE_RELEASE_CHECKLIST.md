@@ -27,4 +27,4 @@ Remaining admin work outside the codebase:
 
 High-risk review item:
 
-- The app currently uses Yahoo Finance quote/chart endpoints. Before submission, verify the licensing and terms are acceptable for App Store distribution. If not, switch to an official market-data provider.
+- The app currently uses Alpha Vantage free-tier commodity endpoints. Before submission, confirm the commercial terms fit your distribution model and upgrade to a paid/live market-data plan if you need minute-level refresh at scale.
