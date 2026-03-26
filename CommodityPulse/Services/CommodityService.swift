@@ -515,7 +515,11 @@ struct CommodityService: CommodityServicing {
     }
 
     private func parseEIASeriesDate(_ string: String) -> Date? {
-        Self.eiaSeriesDateFormatter.date(from: string)
+        if let compact = Self.eiaSeriesDateFormatter.date(from: string) {
+            return compact
+        }
+
+        return Self.eiaDashedSeriesDateFormatter.date(from: string)
     }
 
     private static func resolveEIAAPIKey(from override: String?) -> String {
@@ -558,6 +562,15 @@ struct CommodityService: CommodityServicing {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
         formatter.dateFormat = "yyyyMMdd"
+        return formatter
+    }()
+
+    private static let eiaDashedSeriesDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd"
         return formatter
     }()
 }

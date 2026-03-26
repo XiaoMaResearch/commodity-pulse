@@ -38,16 +38,28 @@ final class CommodityServiceTests: XCTestCase {
             let payload = """
             {
               "response": {
-                "total": "2",
-                "dateFormat": "YYYYMMDD",
+                "total": 10128,
+                "dateFormat": "YYYY-MM-DD",
                 "frequency": "daily",
                 "data": [
                   {
-                    "period": "20260325",
+                    "period": "2026-03-25",
+                    "duoarea": "YCUOK",
+                    "area-name": "NA",
+                    "product": "EPCWTI",
+                    "product-name": "WTI Crude Oil",
+                    "process": "PF4",
+                    "process-name": "Spot Price FOB",
                     "value": "91.51"
                   },
                   {
-                    "period": "20260324",
+                    "period": "2026-03-24",
+                    "duoarea": "YCUOK",
+                    "area-name": "NA",
+                    "product": "EPCWTI",
+                    "product-name": "WTI Crude Oil",
+                    "process": "PF4",
+                    "process-name": "Spot Price FOB",
                     "value": "93.19"
                   }
                 ]
