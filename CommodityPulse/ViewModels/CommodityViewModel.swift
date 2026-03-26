@@ -93,7 +93,7 @@ final class CommodityViewModel: ObservableObject {
             quotes = newQuotes
             lastUpdated = Date()
             errorMessage = nil
-            infoMessage = "Using daily WTI spot data from EIA via FRED."
+            infoMessage = "Using daily energy spot data from EIA via FRED."
             persistCache()
             Task { [weak self] in
                 await self?.refreshSparklinesIfNeeded()
@@ -189,7 +189,7 @@ final class CommodityViewModel: ObservableObject {
         errorMessage = nil
         sparklinePointsByCommodity = [:]
         sparklineLastUpdated = nil
-        infoMessage = "Cache cleared. Pull to refresh for the latest WTI spot data."
+        infoMessage = "Cache cleared. Pull to refresh for the latest energy spot data."
     }
 
     private func loadHistory(for commodity: Commodity, range: CommodityChartRange, force: Bool = false) async {
@@ -260,7 +260,7 @@ final class CommodityViewModel: ObservableObject {
               let payload = try? decoder.decode(CachePayload.self, from: data) else { return }
         quotes = payload.quotes
         lastUpdated = payload.lastUpdated
-        infoMessage = "Loaded cached WTI prices while waiting for the latest provider snapshot."
+        infoMessage = "Loaded cached prices while waiting for the latest provider snapshot."
     }
 
     private func loadAutoRefreshPreference() {

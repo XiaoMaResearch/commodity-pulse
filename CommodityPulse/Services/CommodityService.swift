@@ -93,12 +93,29 @@ struct CommodityService: CommodityServicing {
             throw CommodityServiceError.apiKeyMissing
         }
 
-        let points = try await loadSeries(for: .wti)
-        guard let quote = makeQuote(from: points, commodity: .wti) else {
-            throw CommodityServiceError.emptyPayload
+        var quotes: [CommodityQuote] = []
+        var lastError: Error = CommodityServiceError.emptyPayload
+
+        for commodity in Commodity.supportedCases {
+            do {
+                let points = try await loadSeries(for: commodity)
+                if let quote = makeQuote(from: points, commodity: commodity) {
+                    quotes.append(quote)
+                }
+            } catch {
+                lastError = error
+            }
         }
 
-        return [quote]
+        let ordered = Commodity.supportedCases.compactMap { commodity in
+            quotes.first(where: { $0.commodity == commodity })
+        }
+
+        if ordered.isEmpty {
+            throw lastError
+        }
+
+        return ordered
     }
 
     func fetchHistory(for commodity: Commodity, range: CommodityChartRange) async throws -> [CommodityPricePoint] {

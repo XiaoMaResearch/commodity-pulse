@@ -22,9 +22,11 @@ final class CommodityServiceTests: XCTestCase {
         let service = CommodityService(session: makeSession(), apiKey: "test-key")
         let quotes = try await service.fetchQuotes()
 
-        XCTAssertEqual(quotes.map(\.commodity), [.wti])
+        XCTAssertEqual(quotes.map(\.commodity), [.wti, .brent, .naturalGas])
         XCTAssertEqual(quotes.first?.price, 78.4)
         XCTAssertEqual(quotes.first?.change, 1.2, accuracy: 0.001)
+        XCTAssertEqual(quotes[1].price, 82.9)
+        XCTAssertEqual(quotes[2].price, 3.25)
     }
 
     func testFetchHistoryParsesPoints() async throws {
@@ -98,29 +100,73 @@ private func responseData(for request: URLRequest) throws -> Data {
     switch url.path {
     case "/fred/series/observations":
         let seriesID = components.queryItems?.first(where: { $0.name == "series_id" })?.value
-        guard seriesID == "DCOILWTICO" else {
+        switch seriesID {
+        case "DCOILWTICO":
+            payload = """
+            {
+              "realtime_start": "2026-03-25",
+              "realtime_end": "2026-03-25",
+              "observation_start": "1776-07-04",
+              "observation_end": "9999-12-31",
+              "units": "lin",
+              "output_type": 1,
+              "file_type": "json",
+              "order_by": "observation_date",
+              "sort_order": "desc",
+              "count": 2,
+              "offset": 0,
+              "limit": 400,
+              "observations": [
+                { "date": "2026-03-21", "value": "78.40" },
+                { "date": "2026-03-20", "value": "77.20" }
+              ]
+            }
+            """
+        case "DCOILBRENTEU":
+            payload = """
+            {
+              "realtime_start": "2026-03-25",
+              "realtime_end": "2026-03-25",
+              "observation_start": "1776-07-04",
+              "observation_end": "9999-12-31",
+              "units": "lin",
+              "output_type": 1,
+              "file_type": "json",
+              "order_by": "observation_date",
+              "sort_order": "desc",
+              "count": 2,
+              "offset": 0,
+              "limit": 400,
+              "observations": [
+                { "date": "2026-03-21", "value": "82.90" },
+                { "date": "2026-03-20", "value": "81.80" }
+              ]
+            }
+            """
+        case "DHHNGSP":
+            payload = """
+            {
+              "realtime_start": "2026-03-25",
+              "realtime_end": "2026-03-25",
+              "observation_start": "1776-07-04",
+              "observation_end": "9999-12-31",
+              "units": "lin",
+              "output_type": 1,
+              "file_type": "json",
+              "order_by": "observation_date",
+              "sort_order": "desc",
+              "count": 2,
+              "offset": 0,
+              "limit": 400,
+              "observations": [
+                { "date": "2026-03-21", "value": "3.25" },
+                { "date": "2026-03-20", "value": "3.10" }
+              ]
+            }
+            """
+        default:
             throw URLError(.badURL)
         }
-        payload = """
-        {
-          "realtime_start": "2026-03-25",
-          "realtime_end": "2026-03-25",
-          "observation_start": "1776-07-04",
-          "observation_end": "9999-12-31",
-          "units": "lin",
-          "output_type": 1,
-          "file_type": "json",
-          "order_by": "observation_date",
-          "sort_order": "asc",
-          "count": 2,
-          "offset": 0,
-          "limit": 400,
-          "observations": [
-            { "date": "2026-03-20", "value": "77.20" },
-            { "date": "2026-03-21", "value": "78.40" }
-          ]
-        }
-        """
     default:
         throw URLError(.badServerResponse)
     }

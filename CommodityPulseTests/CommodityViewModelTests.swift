@@ -9,14 +9,16 @@ final class CommodityViewModelTests: XCTestCase {
 
         let service = MockCommodityService(
             quotes: [
-                CommodityQuote(commodity: .wti, price: 80, change: 1.2, changePercent: 1.5, marketTime: Date())
+                CommodityQuote(commodity: .wti, price: 80, change: 1.2, changePercent: 1.5, marketTime: Date()),
+                CommodityQuote(commodity: .brent, price: 84, change: 1.0, changePercent: 1.2, marketTime: Date()),
+                CommodityQuote(commodity: .naturalGas, price: 3.2, change: 0.1, changePercent: 3.2, marketTime: Date())
             ]
         )
 
         let viewModel = CommodityViewModel(service: service, defaults: defaults)
         await viewModel.refresh()
 
-        XCTAssertEqual(viewModel.displayedQuotes.count, 1)
+        XCTAssertEqual(viewModel.displayedQuotes.count, 3)
         XCTAssertNil(viewModel.errorMessage)
         XCTAssertNotNil(viewModel.lastUpdated)
     }
@@ -44,19 +46,21 @@ final class CommodityViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.historyPoints.count, 2)
     }
 
-    func testDisplayedQuotesShowsWTIOnlyCatalog() {
+    func testDisplayedQuotesShowsEnergyCatalog() {
         let defaults = UserDefaults(suiteName: #function)!
         defaults.removePersistentDomain(forName: #function)
 
         let service = MockCommodityService(
             quotes: [
-                CommodityQuote(commodity: .wti, price: 80, change: 1.2, changePercent: 1.5, marketTime: Date())
+                CommodityQuote(commodity: .naturalGas, price: 3.2, change: 0.1, changePercent: 3.2, marketTime: Date()),
+                CommodityQuote(commodity: .wti, price: 80, change: 1.2, changePercent: 1.5, marketTime: Date()),
+                CommodityQuote(commodity: .brent, price: 84, change: 1.0, changePercent: 1.2, marketTime: Date())
             ]
         )
 
         let viewModel = CommodityViewModel(service: service, defaults: defaults)
 
-        XCTAssertEqual(viewModel.displayedQuotes.map(\.commodity), [.wti])
+        XCTAssertEqual(viewModel.displayedQuotes.map(\.commodity), [.wti, .brent, .naturalGas])
     }
 
     func testAutoRefreshDefaultsOffAndPersists() {

@@ -2,6 +2,8 @@ import Foundation
 
 enum Commodity: String, CaseIterable, Identifiable, Codable {
     case wti = "wti"
+    case brent = "brent"
+    case naturalGas = "natural_gas"
 
     static var supportedCases: [Commodity] {
         allCases
@@ -12,25 +14,31 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
     var name: String {
         switch self {
         case .wti: return "WTI Crude Oil"
+        case .brent: return "Brent Crude Oil"
+        case .naturalGas: return "Natural Gas"
         }
     }
 
     var unit: String {
         switch self {
         case .wti: return "USD / barrel"
+        case .brent: return "USD / barrel"
+        case .naturalGas: return "USD / MMBtu"
         }
     }
 
     var fredSeriesID: String {
         switch self {
         case .wti: return "DCOILWTICO"
+        case .brent: return "DCOILBRENTEU"
+        case .naturalGas: return "DHHNGSP"
         }
     }
 
     var providerCadenceLabel: String {
         switch self {
-        case .wti:
-            return "Daily WTI spot data"
+        case .wti, .brent, .naturalGas:
+            return "Daily spot data"
         }
     }
 
@@ -41,6 +49,8 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
     var displayOrder: Int {
         switch self {
         case .wti: return 0
+        case .brent: return 1
+        case .naturalGas: return 2
         }
     }
 }

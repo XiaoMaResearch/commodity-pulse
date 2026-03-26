@@ -2,11 +2,13 @@
 
 This repo includes a ready-to-use SwiftUI codebase for an iOS app that tracks:
 - WTI Crude Oil
+- Brent Crude Oil
+- Natural Gas
 - Energy news headlines from EIA
 
 Features implemented:
 - Auto refresh every 1 minute
-- Manual refresh button
+- Pull-to-refresh on market, chart, and news screens
 - Pull-to-refresh gesture
 - Last updated time + market timestamp
 - Cached quotes fallback for poor connectivity
@@ -18,7 +20,7 @@ Features implemented:
 - Automatic retry/backoff on transient network failures
 - In-app Settings sheet with maintenance/disclaimer
 - Separate Energy News tab powered by EIA's RSS feed
-- Free-tier catalog trimmed to a single WTI instrument for the daily FRED/EIA data source
+- Free-tier catalog trimmed to WTI, Brent, and natural gas on daily FRED/EIA spot series
 - App icon asset catalog and accent color asset catalog
 - XCTest target with service and view-model coverage
 - Privacy policy and support pages under `docs/`
@@ -43,9 +45,12 @@ Features implemented:
 7. Run tests with `Cmd+U` or by selecting the `CommodityPulse` scheme and choosing `Product -> Test`.
 
 Notes:
-- WTI price data uses the FRED `DCOILWTICO` series, sourced from the U.S. Energy Information Administration.
+- Price data uses FRED daily spot series sourced from the U.S. Energy Information Administration:
+  - `DCOILWTICO` for WTI
+  - `DCOILBRENTEU` for Brent
+  - `DHHNGSP` for Henry Hub natural gas
 - Energy headlines come from the official EIA `Today in Energy` RSS feed.
-- The WTI feed is daily spot data, not minute-by-minute futures data.
+- These feeds are daily spot data, not minute-by-minute futures data.
 - App Store support/privacy pages can be published from the `docs/` folder using GitHub Pages.
 
 ## 2) Publish to App Store (step-by-step)

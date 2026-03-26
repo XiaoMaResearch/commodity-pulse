@@ -21,7 +21,7 @@ struct ContentView: View {
         TabView(selection: $selectedTab) {
             dashboardTab
                 .tabItem {
-                    Label("WTI", systemImage: "drop.fill")
+                    Label("Market", systemImage: "drop.fill")
                 }
                 .tag(AppTab.market)
 
@@ -168,7 +168,7 @@ private struct SectionHeader: View {
     var body: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("WTI Crude Oil")
+                Text("Energy Spot Prices")
                     .font(.system(.title3, design: .rounded, weight: .bold))
                     .foregroundStyle(.white)
                 Text(subtitle)
@@ -230,7 +230,7 @@ private struct HeaderPanel: View {
                     Text("Commodity Pulse")
                         .font(.system(.largeTitle, design: .rounded, weight: .heavy))
                         .foregroundStyle(.white)
-                    Text("WTI spot tracker with EIA energy news")
+                    Text("WTI, Brent, and natural gas with EIA energy news")
                         .font(.system(.subheadline, design: .rounded, weight: .medium))
                         .foregroundStyle(Color.white.opacity(0.75))
                 }
@@ -681,10 +681,7 @@ private struct CommodityDetailSheet: View {
                         title: "Latest Published",
                         value: quote.marketTime?.formatted(date: .abbreviated, time: .omitted) ?? "--"
                     )
-                    DetailMetaPill(
-                        title: "Cadence",
-                        value: "Daily Spot"
-                    )
+                    DetailMetaPill(title: "Cadence", value: "Daily Spot")
                 }
             } else {
                 DetailMetaPill(title: "Cadence", value: "Daily Spot")
@@ -1171,9 +1168,9 @@ private struct SettingsSheet: View {
         NavigationStack {
             List {
                 Section("Data") {
-                    Text("WTI source: \(ReleaseConfiguration.marketDataProviderName)")
+                    Text("Market source: \(ReleaseConfiguration.marketDataProviderName)")
                     Text("Energy news source: \(ReleaseConfiguration.newsProviderName)")
-                    Text("WTI is daily spot data and may not update intraday.")
+                    Text("WTI, Brent, and natural gas are daily spot data and may not update intraday.")
                     Text("Prices and news are for informational use only.")
                 }
 
@@ -1189,10 +1186,10 @@ private struct SettingsSheet: View {
 
                 Section("Preferences") {
                     Toggle("Auto Refresh Every 60 Seconds", isOn: $viewModel.isAutoRefreshEnabled)
-                    Text("Auto refresh is off by default for the daily WTI feed.")
+                    Text("Auto refresh is off by default for the daily spot feeds.")
                     Text("When enabled, refresh runs every 60 seconds while the app is active.")
-                    Text("WTI source data is daily, so most minute-by-minute refreshes will not change the price.")
-                    Text("Manual refresh is always available from the dashboard, chart view, and news page.")
+                    Text("These source series are daily, so most minute-by-minute refreshes will not change the prices.")
+                    Text("Pull down to refresh is available on the dashboard, chart view, and news page.")
                 }
 
                 Section("Maintenance") {
