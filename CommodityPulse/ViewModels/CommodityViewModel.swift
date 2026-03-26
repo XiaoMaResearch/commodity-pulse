@@ -273,7 +273,7 @@ final class CommodityViewModel: ObservableObject {
 
 }
 
-struct EnergyNewsItem: Identifiable, Equatable {
+struct EnergyNewsItem: Identifiable, Equatable, Codable {
     let title: String
     let summary: String
     let link: URL
@@ -311,9 +311,20 @@ final class EnergyNewsViewModel: ObservableObject {
     @Published private(set) var isLoading = false
 
     private let service: EnergyNewsServicing
+    private let defaults: UserDefaults
+    private let cacheKey = "commodityPulse.cachedEnergyNews.v1"
+    private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
 
-    init(service: EnergyNewsServicing = EnergyNewsService()) {
+    private struct CachePayload: Codable {
+        let articles: [EnergyNewsItem]
+        let lastUpdated: Date?
+    }
+
+    init(service: EnergyNewsServicing = EnergyNewsService(), defaults: UserDefaults = .standard) {
         self.service = service
+        self.defaults = defaults
+        loadCache()
     }
 
     func refreshIfNeeded() async {
@@ -333,9 +344,30 @@ final class EnergyNewsViewModel: ObservableObject {
             articles = try await service.fetchNews()
             lastUpdated = Date()
             errorMessage = nil
+            persistCache()
         } catch {
-            errorMessage = error.localizedDescription
+            if articles.isEmpty {
+                errorMessage = error.localizedDescription
+            } else {
+                errorMessage = nil
+            }
         }
+    }
+
+    private func persistCache() {
+        let payload = CachePayload(articles: articles, lastUpdated: lastUpdated)
+        guard let data = try? encoder.encode(payload) else { return }
+        defaults.set(data, forKey: cacheKey)
+    }
+
+    private func loadCache() {
+        guard let data = defaults.data(forKey: cacheKey),
+              let payload = try? decoder.decode(CachePayload.self, from: data) else {
+            return
+        }
+
+        articles = payload.articles
+        lastUpdated = payload.lastUpdated
     }
 }
 

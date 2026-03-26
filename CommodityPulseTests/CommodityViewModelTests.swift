@@ -75,6 +75,38 @@ final class CommodityViewModelTests: XCTestCase {
         let restoredViewModel = CommodityViewModel(service: MockCommodityService(), defaults: defaults)
         XCTAssertTrue(restoredViewModel.isAutoRefreshEnabled)
     }
+
+    func testEnergyNewsLoadsFromCacheWhenOffline() async {
+        let defaults = UserDefaults(suiteName: #function)!
+        defaults.removePersistentDomain(forName: #function)
+
+        let articles = [
+            EnergyNewsItem(
+                title: "WTI exports rise",
+                summary: "Sample cached summary for the EIA article.",
+                link: URL(string: "https://www.eia.gov/todayinenergy/detail.php?id=1")!,
+                publishedAt: Date(timeIntervalSince1970: 100)
+            )
+        ]
+
+        let onlineViewModel = EnergyNewsViewModel(
+            service: MockEnergyNewsService(result: .success(articles)),
+            defaults: defaults
+        )
+        await onlineViewModel.refresh(force: true)
+
+        let offlineViewModel = EnergyNewsViewModel(
+            service: MockEnergyNewsService(result: .failure(EnergyNewsServiceError.feedUnavailable)),
+            defaults: defaults
+        )
+
+        XCTAssertEqual(offlineViewModel.articles, articles)
+
+        await offlineViewModel.refresh(force: true)
+
+        XCTAssertEqual(offlineViewModel.articles, articles)
+        XCTAssertNil(offlineViewModel.errorMessage)
+    }
 }
 
 private struct MockCommodityService: CommodityServicing {
@@ -87,5 +119,13 @@ private struct MockCommodityService: CommodityServicing {
 
     func fetchHistory(for commodity: Commodity, range: CommodityChartRange) async throws -> [CommodityPricePoint] {
         history[commodity] ?? []
+    }
+}
+
+private struct MockEnergyNewsService: EnergyNewsServicing {
+    let result: Result<[EnergyNewsItem], Error>
+
+    func fetchNews() async throws -> [EnergyNewsItem] {
+        try result.get()
     }
 }
