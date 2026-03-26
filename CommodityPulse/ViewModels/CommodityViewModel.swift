@@ -81,7 +81,7 @@ final class CommodityViewModel: ObservableObject {
         sparklinePointsByCommodity[commodity] ?? []
     }
 
-    func refresh() async {
+    func refresh(force: Bool = false) async {
         if isLoading { return }
 
         isLoading = true
@@ -89,14 +89,16 @@ final class CommodityViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            let newQuotes = try await fetchQuotesWithRetry()
+            let newQuotes = try await fetchQuotesWithRetry(force: force)
             quotes = newQuotes
             lastUpdated = Date()
             errorMessage = nil
-            infoMessage = "Using daily energy spot data from EIA via FRED."
+            infoMessage = force
+                ? "Refreshed the latest published daily energy spot data from EIA via FRED. Prices may stay unchanged between source updates."
+                : "Using daily energy spot data from EIA via FRED."
             persistCache()
             Task { [weak self] in
-                await self?.refreshSparklinesIfNeeded()
+                await self?.refreshSparklinesIfNeeded(force: force)
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -166,7 +168,7 @@ final class CommodityViewModel: ObservableObject {
         var collected: [Commodity: [CommodityPricePoint]] = [:]
         for commodity in Commodity.supportedCases {
             do {
-                let points = try await service.fetchHistory(for: commodity, range: .oneMonth)
+                let points = try await service.fetchHistory(for: commodity, range: .oneMonth, forceRefresh: force)
                 let trimmed = Array(points.suffix(32))
                 if !trimmed.isEmpty {
                     collected[commodity] = trimmed
@@ -205,7 +207,7 @@ final class CommodityViewModel: ObservableObject {
         defer { isHistoryLoading = false }
 
         do {
-            let points = try await service.fetchHistory(for: commodity, range: range)
+            let points = try await service.fetchHistory(for: commodity, range: range, forceRefresh: force)
             historyCache[key] = points
 
             if selectedCommodity == commodity && selectedChartRange == range {
@@ -222,12 +224,12 @@ final class CommodityViewModel: ObservableObject {
         }
     }
 
-    private func fetchQuotesWithRetry(maxAttempts: Int = 3) async throws -> [CommodityQuote] {
+    private func fetchQuotesWithRetry(force: Bool, maxAttempts: Int = 3) async throws -> [CommodityQuote] {
         var lastError: Error?
 
         for attempt in 1...maxAttempts {
             do {
-                return try await service.fetchQuotes()
+                return try await service.fetchQuotes(forceRefresh: force)
             } catch {
                 lastError = error
                 guard shouldRetry(error), attempt < maxAttempts else { throw error }

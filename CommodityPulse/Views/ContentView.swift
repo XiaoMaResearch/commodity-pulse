@@ -89,7 +89,7 @@ struct ContentView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
-            .refreshable { await viewModel.refresh() }
+            .refreshable { await viewModel.refresh(force: true) }
             .task {
                 await viewModel.refresh()
                 await viewModel.refreshSparklinesIfNeeded()
@@ -100,7 +100,7 @@ struct ContentView: View {
                 if newPhase == .active {
                     viewModel.startAutoRefresh()
                     Task {
-                        await viewModel.refresh()
+                        await viewModel.refresh(force: true)
                         await viewModel.refreshSparklinesIfNeeded(force: true)
                     }
                 } else if newPhase == .background {

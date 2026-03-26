@@ -1,8 +1,8 @@
 import Foundation
 
 protocol CommodityServicing {
-    func fetchQuotes() async throws -> [CommodityQuote]
-    func fetchHistory(for commodity: Commodity, range: CommodityChartRange) async throws -> [CommodityPricePoint]
+    func fetchQuotes(forceRefresh: Bool) async throws -> [CommodityQuote]
+    func fetchHistory(for commodity: Commodity, range: CommodityChartRange, forceRefresh: Bool) async throws -> [CommodityPricePoint]
 }
 
 enum CommodityServiceError: LocalizedError, Equatable {
@@ -88,7 +88,7 @@ struct CommodityService: CommodityServicing {
         self.cacheMaxAge = cacheMaxAge
     }
 
-    func fetchQuotes() async throws -> [CommodityQuote] {
+    func fetchQuotes(forceRefresh: Bool = false) async throws -> [CommodityQuote] {
         guard !apiKey.isEmpty else {
             throw CommodityServiceError.apiKeyMissing
         }
@@ -98,7 +98,7 @@ struct CommodityService: CommodityServicing {
 
         for commodity in Commodity.supportedCases {
             do {
-                let points = try await loadSeries(for: commodity)
+                let points = try await loadSeries(for: commodity, forceRefresh: forceRefresh)
                 if let quote = makeQuote(from: points, commodity: commodity) {
                     quotes.append(quote)
                 }
@@ -118,12 +118,12 @@ struct CommodityService: CommodityServicing {
         return ordered
     }
 
-    func fetchHistory(for commodity: Commodity, range: CommodityChartRange) async throws -> [CommodityPricePoint] {
+    func fetchHistory(for commodity: Commodity, range: CommodityChartRange, forceRefresh: Bool = false) async throws -> [CommodityPricePoint] {
         guard !apiKey.isEmpty else {
             throw CommodityServiceError.apiKeyMissing
         }
 
-        let points = try await loadSeries(for: commodity)
+        let points = try await loadSeries(for: commodity, forceRefresh: forceRefresh)
         let filtered = Array(points.suffix(range.requestedPointCount))
 
         if filtered.isEmpty {
@@ -132,8 +132,9 @@ struct CommodityService: CommodityServicing {
         return filtered
     }
 
-    private func loadSeries(for commodity: Commodity) async throws -> [CommodityPricePoint] {
-        if let cached = await cache.freshSeries(for: commodity, maxAge: cacheMaxAge),
+    private func loadSeries(for commodity: Commodity, forceRefresh: Bool) async throws -> [CommodityPricePoint] {
+        if !forceRefresh,
+           let cached = await cache.freshSeries(for: commodity, maxAge: cacheMaxAge),
            !cached.isEmpty {
             return cached
         }
@@ -141,7 +142,7 @@ struct CommodityService: CommodityServicing {
         let url = try makeObservationsURL(for: commodity)
 
         do {
-            let data = try await performRequest(url: url)
+            let data = try await performRequest(url: url, forceRefresh: forceRefresh)
             let root = try decodeRootObject(from: data)
             let points = try decodeSeries(from: root)
 
@@ -287,11 +288,16 @@ struct CommodityService: CommodityServicing {
         }
     }
 
-    private func performRequest(url: URL) async throws -> Data {
+    private func performRequest(url: URL, forceRefresh: Bool) async throws -> Data {
         var request = URLRequest(url: url)
         request.timeoutInterval = 20
         request.setValue("CommodityPulse/1.0", forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.cachePolicy = forceRefresh ? .reloadIgnoringLocalCacheData : .useProtocolCachePolicy
+        if forceRefresh {
+            request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+            request.setValue("no-cache", forHTTPHeaderField: "Pragma")
+        }
 
         let data: Data
         let response: URLResponse

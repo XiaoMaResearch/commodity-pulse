@@ -20,7 +20,7 @@ final class CommodityServiceTests: XCTestCase {
         }
 
         let service = CommodityService(session: makeSession(), apiKey: "test-key")
-        let quotes = try await service.fetchQuotes()
+        let quotes = try await service.fetchQuotes(forceRefresh: false)
 
         XCTAssertEqual(quotes.map(\.commodity), [.wti, .brent, .naturalGas])
         XCTAssertEqual(quotes.first?.price, 78.4)
@@ -37,7 +37,7 @@ final class CommodityServiceTests: XCTestCase {
         }
 
         let service = CommodityService(session: makeSession(), apiKey: "test-key")
-        let points = try await service.fetchHistory(for: .wti, range: .oneDay)
+        let points = try await service.fetchHistory(for: .wti, range: .oneDay, forceRefresh: false)
 
         XCTAssertEqual(points.count, 2)
         XCTAssertEqual(points.last?.price, 78.4)
@@ -51,7 +51,7 @@ final class CommodityServiceTests: XCTestCase {
         let service = CommodityService(session: makeSession(), apiKey: "test-key")
 
         do {
-            _ = try await service.fetchQuotes()
+            _ = try await service.fetchQuotes(forceRefresh: false)
             XCTFail("Expected networkUnavailable error")
         } catch let error as CommodityServiceError {
             XCTAssertEqual(error, .networkUnavailable)
@@ -74,13 +74,27 @@ final class CommodityServiceTests: XCTestCase {
         let service = CommodityService(session: makeSession(), apiKey: "test-key", cacheMaxAge: 0)
 
         do {
-            _ = try await service.fetchQuotes()
+            _ = try await service.fetchQuotes(forceRefresh: false)
             XCTFail("Expected rateLimited error")
         } catch let error as CommodityServiceError {
             XCTAssertEqual(error, .rateLimited)
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
+    }
+
+    func testForceRefreshBypassesRequestCache() async throws {
+        MockURLProtocol.handler = { request in
+            XCTAssertEqual(request.cachePolicy, .reloadIgnoringLocalCacheData)
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Cache-Control"), "no-cache")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Pragma"), "no-cache")
+
+            let data = try responseData(for: request)
+            return try MockURLProtocol.successResponse(for: request, data: data)
+        }
+
+        let service = CommodityService(session: makeSession(), apiKey: "test-key")
+        _ = try await service.fetchQuotes(forceRefresh: true)
     }
 
     private func makeSession() -> URLSession {

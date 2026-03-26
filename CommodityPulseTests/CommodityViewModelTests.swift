@@ -76,6 +76,19 @@ final class CommodityViewModelTests: XCTestCase {
         XCTAssertTrue(restoredViewModel.isAutoRefreshEnabled)
     }
 
+    func testForceRefreshPassesThroughToService() async {
+        let defaults = UserDefaults(suiteName: #function)!
+        defaults.removePersistentDomain(forName: #function)
+
+        let service = RecordingCommodityService()
+        let viewModel = CommodityViewModel(service: service, defaults: defaults)
+
+        await viewModel.refresh(force: true)
+
+        let recordedForceFlags = await service.recordedQuoteForceFlags()
+        XCTAssertEqual(recordedForceFlags, [true])
+    }
+
     func testEnergyNewsLoadsFromCacheWhenOffline() async {
         let defaults = UserDefaults(suiteName: #function)!
         defaults.removePersistentDomain(forName: #function)
@@ -113,12 +126,33 @@ private struct MockCommodityService: CommodityServicing {
     var quotes: [CommodityQuote] = []
     var history: [Commodity: [CommodityPricePoint]] = [:]
 
-    func fetchQuotes() async throws -> [CommodityQuote] {
+    func fetchQuotes(forceRefresh: Bool) async throws -> [CommodityQuote] {
         quotes
     }
 
-    func fetchHistory(for commodity: Commodity, range: CommodityChartRange) async throws -> [CommodityPricePoint] {
+    func fetchHistory(for commodity: Commodity, range: CommodityChartRange, forceRefresh: Bool) async throws -> [CommodityPricePoint] {
         history[commodity] ?? []
+    }
+}
+
+private actor RecordingCommodityService: CommodityServicing {
+    private var quoteForceFlags: [Bool] = []
+
+    func fetchQuotes(forceRefresh: Bool) async throws -> [CommodityQuote] {
+        quoteForceFlags.append(forceRefresh)
+        return [
+            CommodityQuote(commodity: .wti, price: 80, change: 1.2, changePercent: 1.5, marketTime: Date()),
+            CommodityQuote(commodity: .brent, price: 84, change: 1.0, changePercent: 1.2, marketTime: Date()),
+            CommodityQuote(commodity: .naturalGas, price: 3.2, change: 0.1, changePercent: 3.2, marketTime: Date())
+        ]
+    }
+
+    func fetchHistory(for commodity: Commodity, range: CommodityChartRange, forceRefresh: Bool) async throws -> [CommodityPricePoint] {
+        []
+    }
+
+    func recordedQuoteForceFlags() -> [Bool] {
+        quoteForceFlags
     }
 }
 
