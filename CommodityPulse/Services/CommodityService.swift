@@ -73,7 +73,8 @@ private actor CommoditySeriesCache {
 
 struct CommodityService: CommodityServicing {
     private let session: URLSession
-    private let apiKey: String
+    private let fredAPIKey: String
+    private let eiaAPIKey: String
     private let cache: CommoditySeriesCache
     private let cacheMaxAge: TimeInterval
     private let dailyPricesURL = URL(string: "https://www.eia.gov/todayinenergy/prices.php")!
@@ -81,22 +82,28 @@ struct CommodityService: CommodityServicing {
     init(
         session: URLSession = .shared,
         apiKey: String = ReleaseConfiguration.fredAPIKey,
+        marketAPIKey: String? = nil,
         cacheMaxAge: TimeInterval = 55
     ) {
         self.session = session
-        self.apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.fredAPIKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.eiaAPIKey = Self.resolveEIAAPIKey(from: marketAPIKey)
         self.cache = CommoditySeriesCache()
         self.cacheMaxAge = cacheMaxAge
     }
 
     func fetchQuotes(forceRefresh: Bool = false) async throws -> [CommodityQuote] {
+        if !eiaAPIKey.isEmpty {
+            return try await fetchAPIQuotes(forceRefresh: forceRefresh)
+        }
+
         let html = try await performHTMLRequest(url: dailyPricesURL, forceRefresh: forceRefresh)
         let parser = EIADailyPricesParser(html: html)
         return try parser.parseQuotes()
     }
 
     func fetchHistory(for commodity: Commodity, range: CommodityChartRange, forceRefresh: Bool = false) async throws -> [CommodityPricePoint] {
-        guard !apiKey.isEmpty else {
+        guard !fredAPIKey.isEmpty else {
             throw CommodityServiceError.apiKeyMissing
         }
 
@@ -151,7 +158,7 @@ struct CommodityService: CommodityServicing {
         components.path = "/fred/series/observations"
         components.queryItems = [
             URLQueryItem(name: "series_id", value: commodity.fredSeriesID),
-            URLQueryItem(name: "api_key", value: apiKey),
+            URLQueryItem(name: "api_key", value: fredAPIKey),
             URLQueryItem(name: "file_type", value: "json"),
             URLQueryItem(name: "sort_order", value: "desc"),
             URLQueryItem(name: "limit", value: "400")
@@ -180,6 +187,48 @@ struct CommodityService: CommodityServicing {
         }
 
         return root
+    }
+
+    private func fetchAPIQuotes(forceRefresh: Bool) async throws -> [CommodityQuote] {
+        var quotes: [CommodityQuote] = []
+
+        for commodity in Commodity.supportedCases {
+            let url = try makeEIASeriesURL(for: commodity)
+            let data = try await performJSONRequest(url: url, forceRefresh: forceRefresh)
+            let root = try decodeRootObject(from: data)
+            let points = try decodeEIASeries(from: root)
+
+            guard let quote = makeQuote(from: points, commodity: commodity) else {
+                throw CommodityServiceError.emptyPayload
+            }
+
+            quotes.append(quote)
+        }
+
+        guard !quotes.isEmpty else {
+            throw CommodityServiceError.emptyPayload
+        }
+
+        return quotes.sorted { $0.commodity.displayOrder < $1.commodity.displayOrder }
+    }
+
+    private func makeEIASeriesURL(for commodity: Commodity) throws -> URL {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "api.eia.gov"
+        components.path = "/series/"
+        components.queryItems = [
+            URLQueryItem(name: "api_key", value: eiaAPIKey),
+            URLQueryItem(name: "series_id", value: commodity.eiaSeriesID),
+            URLQueryItem(name: "num", value: "2"),
+            URLQueryItem(name: "sort", value: "desc"),
+            URLQueryItem(name: "out", value: "json")
+        ]
+
+        guard let url = components.url else {
+            throw CommodityServiceError.invalidResponse
+        }
+        return url
     }
 
     private func mapProviderMessage(_ message: String) -> CommodityServiceError {
@@ -224,7 +273,48 @@ struct CommodityService: CommodityServicing {
         return points
     }
 
+    private func decodeEIASeries(from root: [String: Any]) throws -> [CommodityPricePoint] {
+        guard let series = root["series"] as? [[String: Any]],
+              let entry = series.first,
+              let rows = entry["data"] as? [[Any]] else {
+#if DEBUG
+            print("CommodityService unexpected EIA payload keys=\(Array(root.keys).sorted())")
+#endif
+            throw CommodityServiceError.decodingFailed
+        }
+
+        let points = rows.compactMap { row -> CommodityPricePoint? in
+            guard row.count >= 2,
+                  let period = row[0] as? String,
+                  let date = parseEIASeriesDate(period),
+                  let price = parseNumericValue(row[1]) else {
+                return nil
+            }
+
+            return CommodityPricePoint(date: date, price: price)
+        }
+        .sorted { $0.date < $1.date }
+
+        if points.isEmpty {
+            throw CommodityServiceError.emptyPayload
+        }
+
+        return points
+    }
+
     private func providerError(from root: [String: Any]) -> CommodityServiceError? {
+        if let errorObject = root["error"] as? [String: Any] {
+            if let message = errorObject["message"] as? String,
+               !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return mapProviderMessage(message)
+            }
+
+            if let code = errorObject["code"] as? String,
+               code.uppercased().contains("API_KEY") {
+                return .apiKeyMissing
+            }
+        }
+
         if let message = root["error_message"] as? String,
            !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return mapProviderMessage(message)
@@ -365,12 +455,50 @@ struct CommodityService: CommodityServicing {
         Self.dateFormatter.date(from: string)
     }
 
+    private func parseEIASeriesDate(_ string: String) -> Date? {
+        Self.eiaSeriesDateFormatter.date(from: string)
+    }
+
+    private static func resolveEIAAPIKey(from override: String?) -> String {
+        if let override {
+            let trimmed = override.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+
+        if let bundleKey = Bundle.main.object(forInfoDictionaryKey: "EIA_API_KEY") as? String {
+            let trimmed = bundleKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+
+        if let environmentKey = ProcessInfo.processInfo.environment["EIA_API_KEY"] {
+            let trimmed = environmentKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+
+        return ""
+    }
+
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
         formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
+    private static let eiaSeriesDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyyMMdd"
         return formatter
     }()
 }

@@ -1124,10 +1124,10 @@ private struct SettingsSheet: View {
                 }
 
                 Section("Data") {
-                    Text("Current price source: EIA Daily Prices")
+                    Text("Current price source: EIA API daily series")
                     Text("Historical chart source: FRED")
                     Text("Energy news source: \(ReleaseConfiguration.newsProviderName)")
-                    Text("WTI and Brent reflect the latest EIA wholesale spot close. Natural gas reflects the Louisiana Henry Hub daily snapshot.")
+                    Text("WTI, Brent, and natural gas use official EIA daily series when an EIA API key is configured.")
                     Text("Prices and news are for informational use only and should not be treated as trading advice.")
                 }
 

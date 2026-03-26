@@ -7,7 +7,8 @@ This project now includes:
 - Unit tests under `CommodityPulseTests/`
 - Shared Xcode scheme with tests wired in
 - Production bundle identifier default: `com.xiaomaresearch.commoditypulse`
-- Daily market data from FRED/EIA for WTI, Brent, and Henry Hub natural gas
+- Daily market data from the official EIA API for WTI, Brent, and Henry Hub natural gas
+- Historical charts from FRED for WTI, Brent, and Henry Hub natural gas
 - Energy news sourced from EIA Today in Energy with cached fallback
 - In-app article reader for news headlines
 

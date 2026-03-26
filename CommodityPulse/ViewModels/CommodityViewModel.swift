@@ -78,8 +78,8 @@ final class CommodityViewModel: ObservableObject {
             lastUpdated = Date()
             errorMessage = nil
             infoMessage = force
-                ? "Refreshed the latest EIA Daily Prices snapshot. Historical charts still use FRED."
-                : "Using the latest EIA Daily Prices snapshot."
+                ? "Refreshed the latest official EIA market data. Historical charts still use FRED."
+                : "Using the latest official EIA market data."
             persistCache()
         } catch {
             errorMessage = error.localizedDescription
@@ -209,7 +209,7 @@ final class CommodityViewModel: ObservableObject {
               let payload = try? decoder.decode(CachePayload.self, from: data) else { return }
         quotes = payload.quotes
         lastUpdated = payload.lastUpdated
-        infoMessage = "Loaded cached prices while waiting for the latest EIA Daily Prices snapshot."
+        infoMessage = "Loaded cached prices while waiting for the latest official EIA market data."
     }
 
     private func loadAutoRefreshPreference() {

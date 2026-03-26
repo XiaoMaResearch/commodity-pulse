@@ -17,12 +17,11 @@ Features implemented:
 - Touch-scrubbing on detail charts for exact date/price lookup
 - Selectable chart ranges (`1D`, `5D`, `1M`, `3M`, `1Y`)
 - Historical period stats (low, high, period change)
-- Daily trend sparklines on dashboard cards (with synthetic fallback)
 - Automatic retry/backoff on transient network failures
 - In-app Settings sheet with maintenance/disclaimer
 - Separate Energy News tab powered by EIA's official Today in Energy page
 - In-app article reader for EIA headlines
-- Free-tier catalog trimmed to WTI, Brent, and natural gas on daily FRED/EIA spot series
+- Free-tier catalog trimmed to WTI, Brent, and natural gas using official EIA market data plus FRED charts
 - App icon asset catalog and accent color asset catalog
 - XCTest target with service and view-model coverage
 - Privacy policy and support pages under `docs/`
@@ -38,7 +37,17 @@ Features implemented:
 4. In project settings, set:
    - Team
    - Bundle Identifier (e.g., `com.yourname.commoditypulse`)
-5. Add your FRED API key:
+5. Add your free EIA API key for market quotes:
+   - Register at `https://www.eia.gov/opendata/register.php`
+   - For simulator/dev runs from Xcode:
+     - `Product -> Scheme -> Edit Scheme`
+     - `Run -> Arguments`
+     - Add environment variable `EIA_API_KEY`
+   - For standalone device use after unplugging:
+     - target `Info` tab
+     - add custom property `EIA_API_KEY`
+     - set it to your free EIA API key
+6. Add your FRED API key for historical charts:
    - For simulator/dev runs from Xcode:
      - `Product -> Scheme -> Edit Scheme`
      - `Run -> Arguments`
@@ -47,16 +56,21 @@ Features implemented:
      - target `Info` tab
      - add custom property `FRED_API_KEY`
      - set it to your free FRED API key
-6. Build and run on Simulator or iPhone.
-7. Run tests with `Cmd+U` or by selecting the `CommodityPulse` scheme and choosing `Product -> Test`.
+7. Build and run on Simulator or iPhone.
+8. Run tests with `Cmd+U` or by selecting the `CommodityPulse` scheme and choosing `Product -> Test`.
 
 Notes:
-- Price data uses FRED daily spot series sourced from the U.S. Energy Information Administration:
+- Market quote data uses official EIA series:
+  - `PET.RWTC.D` for WTI
+  - `PET.RBRTE.D` for Brent
+  - `NG.RNGWHHD.D` for Henry Hub natural gas
+- Historical charts use FRED daily series sourced from the U.S. Energy Information Administration:
   - `DCOILWTICO` for WTI
   - `DCOILBRENTEU` for Brent
   - `DHHNGSP` for Henry Hub natural gas
 - Energy headlines come from the official EIA `Today in Energy` website.
 - These feeds are daily spot data, not minute-by-minute futures data.
+- If `EIA_API_KEY` is not configured, the app falls back to the EIA Daily Prices page for market quotes.
 - App Store support/privacy pages can be published from the `docs/` folder using GitHub Pages.
 
 ## 2) Publish to App Store (step-by-step)
@@ -103,5 +117,5 @@ Notes:
 ## 3) Recommended next improvements before publishing
 
 - Add UI tests for refresh, chart, and news-reader flows
-- Replace the local FRED key workflow with a production-safe key delivery strategy before broad distribution
+- Replace the local EIA/FRED key workflow with a production-safe key delivery strategy before broad distribution
 - Add final App Store screenshots, marketing copy, and a clearer in-app onboarding screen

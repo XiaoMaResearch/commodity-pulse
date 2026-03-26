@@ -35,10 +35,18 @@ enum Commodity: String, CaseIterable, Identifiable, Codable {
         }
     }
 
+    var eiaSeriesID: String {
+        switch self {
+        case .wti: return "PET.RWTC.D"
+        case .brent: return "PET.RBRTE.D"
+        case .naturalGas: return "NG.RNGWHHD.D"
+        }
+    }
+
     var providerCadenceLabel: String {
         switch self {
         case .wti, .brent, .naturalGas:
-            return "Daily spot data"
+            return "Daily published data"
         }
     }
 
