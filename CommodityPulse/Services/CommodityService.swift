@@ -158,7 +158,7 @@ struct CommodityService: CommodityServicing {
             URLQueryItem(name: "series_id", value: commodity.fredSeriesID),
             URLQueryItem(name: "api_key", value: apiKey),
             URLQueryItem(name: "file_type", value: "json"),
-            URLQueryItem(name: "sort_order", value: "asc"),
+            URLQueryItem(name: "sort_order", value: "desc"),
             URLQueryItem(name: "limit", value: "400")
         ]
 
