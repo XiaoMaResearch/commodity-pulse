@@ -23,9 +23,6 @@ final class CommodityViewModel: ObservableObject {
     @Published private(set) var historyPoints: [CommodityPricePoint] = []
     @Published private(set) var isHistoryLoading = false
     @Published var historyErrorMessage: String?
-    @Published private(set) var sparklinePointsByCommodity: [Commodity: [CommodityPricePoint]] = [:]
-    @Published private(set) var isRefreshingSparklines = false
-
     private struct CachePayload: Codable {
         let quotes: [CommodityQuote]
         let lastUpdated: Date?
@@ -44,7 +41,6 @@ final class CommodityViewModel: ObservableObject {
     private let decoder = JSONDecoder()
 
     private var historyCache: [HistoryCacheKey: [CommodityPricePoint]] = [:]
-    private var sparklineLastUpdated: Date?
     private var autoRefreshTask: Task<Void, Never>?
 
     init(service: CommodityServicing = CommodityService(), defaults: UserDefaults = .standard) {
@@ -60,14 +56,6 @@ final class CommodityViewModel: ObservableObject {
         }
     }
 
-    var topGainer: CommodityQuote? {
-        quotes.max(by: { $0.changePercent < $1.changePercent })
-    }
-
-    var topLoser: CommodityQuote? {
-        quotes.min(by: { $0.changePercent < $1.changePercent })
-    }
-
     var isDataStale: Bool {
         guard let lastUpdated else { return true }
         return Date().timeIntervalSince(lastUpdated) > 12 * 60 * 60
@@ -75,10 +63,6 @@ final class CommodityViewModel: ObservableObject {
 
     func quote(for commodity: Commodity) -> CommodityQuote? {
         quotes.first { $0.commodity == commodity }
-    }
-
-    func sparklinePoints(for commodity: Commodity) -> [CommodityPricePoint] {
-        sparklinePointsByCommodity[commodity] ?? []
     }
 
     func refresh(force: Bool = false) async {
@@ -97,9 +81,6 @@ final class CommodityViewModel: ObservableObject {
                 ? "Refreshed the latest published daily energy spot data from EIA via FRED. Prices may stay unchanged between source updates."
                 : "Using daily energy spot data from EIA via FRED."
             persistCache()
-            Task { [weak self] in
-                await self?.refreshSparklinesIfNeeded(force: force)
-            }
         } catch {
             errorMessage = error.localizedDescription
             if !quotes.isEmpty {
@@ -152,45 +133,11 @@ final class CommodityViewModel: ObservableObject {
         await refreshSelectedHistory()
     }
 
-    func refreshSparklinesIfNeeded(force: Bool = false) async {
-        if isRefreshingSparklines { return }
-
-        if !force,
-           let last = sparklineLastUpdated,
-           Date().timeIntervalSince(last) < 240,
-           !sparklinePointsByCommodity.isEmpty {
-            return
-        }
-
-        isRefreshingSparklines = true
-        defer { isRefreshingSparklines = false }
-
-        var collected: [Commodity: [CommodityPricePoint]] = [:]
-        for commodity in Commodity.supportedCases {
-            do {
-                let points = try await service.fetchHistory(for: commodity, range: .oneMonth, forceRefresh: force)
-                let trimmed = Array(points.suffix(32))
-                if !trimmed.isEmpty {
-                    collected[commodity] = trimmed
-                }
-            } catch {
-                continue
-            }
-        }
-
-        if !collected.isEmpty {
-            sparklinePointsByCommodity.merge(collected) { _, new in new }
-            sparklineLastUpdated = Date()
-        }
-    }
-
     func clearCachedQuotes() {
         defaults.removeObject(forKey: cacheKey)
         quotes = []
         lastUpdated = nil
         errorMessage = nil
-        sparklinePointsByCommodity = [:]
-        sparklineLastUpdated = nil
         infoMessage = "Cache cleared. Pull to refresh for the latest energy spot data."
     }
 
@@ -285,7 +232,7 @@ struct EnergyNewsItem: Identifiable, Equatable, Codable {
 }
 
 protocol EnergyNewsServicing {
-    func fetchNews() async throws -> [EnergyNewsItem]
+    func fetchNews(forceRefresh: Bool) async throws -> [EnergyNewsItem]
 }
 
 enum EnergyNewsServiceError: LocalizedError, Equatable {
@@ -344,7 +291,7 @@ final class EnergyNewsViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            articles = try await service.fetchNews()
+            articles = try await service.fetchNews(forceRefresh: force)
             lastUpdated = Date()
             errorMessage = nil
             isShowingCachedArticles = false
@@ -393,14 +340,14 @@ struct EnergyNewsService: EnergyNewsServicing {
         self.session = session
     }
 
-    func fetchNews() async throws -> [EnergyNewsItem] {
+    func fetchNews(forceRefresh: Bool = false) async throws -> [EnergyNewsItem] {
         guard !ReleaseConfiguration.energyNewsPageURLs.isEmpty else {
             throw EnergyNewsServiceError.invalidFeed
         }
 
         for pageURL in ReleaseConfiguration.energyNewsPageURLs {
             do {
-                let items = try await fetchNews(from: pageURL)
+                let items = try await fetchNews(from: pageURL, forceRefresh: forceRefresh)
                 if !items.isEmpty {
                     return Array(items.prefix(20))
                 }
@@ -412,11 +359,16 @@ struct EnergyNewsService: EnergyNewsServicing {
         throw EnergyNewsServiceError.feedUnavailable
     }
 
-    private func fetchNews(from pageURL: URL) async throws -> [EnergyNewsItem] {
+    private func fetchNews(from pageURL: URL, forceRefresh: Bool) async throws -> [EnergyNewsItem] {
         var request = URLRequest(url: pageURL)
         request.timeoutInterval = 20
         request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
         request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        request.cachePolicy = forceRefresh ? .reloadIgnoringLocalCacheData : .useProtocolCachePolicy
+        if forceRefresh {
+            request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+            request.setValue("no-cache", forHTTPHeaderField: "Pragma")
+        }
 
         let data: Data
         let response: URLResponse

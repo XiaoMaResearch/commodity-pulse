@@ -24,7 +24,7 @@ final class CommodityServiceTests: XCTestCase {
 
         XCTAssertEqual(quotes.map(\.commodity), [.wti, .brent, .naturalGas])
         XCTAssertEqual(quotes.first?.price, 78.4)
-        XCTAssertEqual(quotes.first?.change, 1.2, accuracy: 0.001)
+        XCTAssertEqual(quotes.first?.change ?? 0, 1.2, accuracy: 0.001)
         XCTAssertEqual(quotes[1].price, 82.9)
         XCTAssertEqual(quotes[2].price, 3.25)
     }

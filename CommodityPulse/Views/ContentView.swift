@@ -2,6 +2,35 @@ import SwiftUI
 import Charts
 import SafariServices
 
+private enum SourceDateText {
+    static let monthDayYear: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "MMM d, yyyy"
+        return formatter
+    }()
+
+    static let monthDay: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "MMM d"
+        return formatter
+    }()
+
+    static let month: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "MMM"
+        return formatter
+    }()
+}
+
 struct ContentView: View {
     @StateObject private var viewModel = CommodityViewModel()
     @StateObject private var newsViewModel = EnergyNewsViewModel()
@@ -69,7 +98,6 @@ struct ContentView: View {
                                 ForEach(Array(visibleQuotes.enumerated()), id: \.element.id) { index, quote in
                                     CommodityCard(
                                         quote: quote,
-                                        sparklinePoints: viewModel.sparklinePoints(for: quote.commodity),
                                         onOpenDetails: { viewModel.openDetails(for: quote.commodity) }
                                     )
                                     .opacity(cardVisible ? 1 : 0)
@@ -92,7 +120,6 @@ struct ContentView: View {
             .refreshable { await viewModel.refresh(force: true) }
             .task {
                 await viewModel.refresh()
-                await viewModel.refreshSparklinesIfNeeded()
                 viewModel.startAutoRefresh()
                 cardVisible = true
             }
@@ -101,7 +128,6 @@ struct ContentView: View {
                     viewModel.startAutoRefresh()
                     Task {
                         await viewModel.refresh(force: true)
-                        await viewModel.refreshSparklinesIfNeeded(force: true)
                     }
                 } else if newPhase == .background {
                     viewModel.stopAutoRefresh()
@@ -283,73 +309,6 @@ private struct HeaderPanel: View {
     }
 }
 
-private struct MarketSnapshotPanel: View {
-    let topGainer: CommodityQuote?
-    let topLoser: CommodityQuote?
-    let isLoadingSparklines: Bool
-
-    var body: some View {
-        HStack(spacing: 10) {
-            SnapshotPill(
-                title: "Top Gainer",
-                quote: topGainer,
-                tint: Color(red: 0.3, green: 0.95, blue: 0.6)
-            )
-            SnapshotPill(
-                title: "Top Loser",
-                quote: topLoser,
-                tint: Color(red: 1.0, green: 0.45, blue: 0.45)
-            )
-        }
-        .overlay(alignment: .topTrailing) {
-            if isLoadingSparklines {
-                ProgressView()
-                    .controlSize(.small)
-                    .tint(.white.opacity(0.75))
-                    .padding(8)
-            }
-        }
-    }
-}
-
-private struct SnapshotPill: View {
-    let title: String
-    let quote: CommodityQuote?
-    let tint: Color
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.system(.caption2, design: .rounded, weight: .medium))
-                .foregroundStyle(Color.white.opacity(0.65))
-            Text(quote?.commodity.name ?? "--")
-                .font(.system(.subheadline, design: .rounded, weight: .bold))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-            Text(changeText)
-                .font(.system(.caption, design: .rounded, weight: .bold))
-                .foregroundStyle(tint)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.white.opacity(0.08))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.white.opacity(0.10), lineWidth: 1)
-        )
-    }
-
-    private var changeText: String {
-        guard let quote else { return "--" }
-        let sign = quote.changePercent >= 0 ? "+" : ""
-        return "\(sign)\(quote.changePercent.formatted(.number.precision(.fractionLength(2))))%"
-    }
-}
-
 private struct InfoPanel: View {
     let message: String
 
@@ -428,7 +387,6 @@ private struct LoadingCards: View {
 
 private struct CommodityCard: View {
     let quote: CommodityQuote
-    let sparklinePoints: [CommodityPricePoint]
     let onOpenDetails: () -> Void
 
     private var changeColor: Color {
@@ -439,16 +397,15 @@ private struct CommodityCard: View {
         quote.price.formatted(.number.precision(.fractionLength(2)))
     }
 
-    private var changeText: String {
-        let sign = quote.change > 0 ? "+" : ""
-        let change = quote.change.formatted(.number.precision(.fractionLength(2)))
+    private var changePercentText: String {
+        let sign = quote.changePercent > 0 ? "+" : ""
         let percent = quote.changePercent.formatted(.number.precision(.fractionLength(2)))
-        return "\(sign)\(change) (\(sign)\(percent)%)"
+        return "\(sign)\(percent)%"
     }
 
     private var snapshotText: String {
         guard let marketTime = quote.marketTime else { return "--" }
-        return marketTime.formatted(date: .abbreviated, time: .omitted)
+        return SourceDateText.monthDayYear.string(from: marketTime)
     }
 
     var body: some View {
@@ -463,34 +420,37 @@ private struct CommodityCard: View {
                         .foregroundStyle(Color.white.opacity(0.7))
                 }
                 Spacer()
-                Button(action: onOpenDetails) {
-                    Image(systemName: "chart.line.uptrend.xyaxis")
-                        .foregroundStyle(.white)
-                        .padding(8)
-                        .background(Color.white.opacity(0.10))
-                        .clipShape(Circle())
-                }
-                .accessibilityLabel("Open historical chart")
+                CommodityBadgeMark(commodity: quote.commodity)
             }
 
-            HStack(alignment: .bottom) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("$\(priceText)")
-                        .font(.system(.title2, design: .rounded, weight: .heavy))
-                        .foregroundStyle(.white)
-                    Text(snapshotText)
+            HStack(alignment: .center, spacing: 12) {
+                Text("$\(priceText)")
+                    .font(.system(.title2, design: .rounded, weight: .heavy))
+                    .foregroundStyle(.white)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Daily Change")
                         .font(.system(.caption2, design: .rounded, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.6))
+                        .foregroundStyle(Color.white.opacity(0.56))
+                    StatusCapsule(
+                        title: changePercentText,
+                        tint: changeColor,
+                        foreground: quote.change >= 0 ? .black : .white
+                    )
                 }
+
                 Spacer()
-                Text(changeText)
-                    .font(.system(.subheadline, design: .rounded, weight: .bold))
-                    .foregroundStyle(changeColor)
             }
 
             HStack {
-                TrendSparkline(quote: quote, lineColor: changeColor, realPoints: sparklinePoints)
-                    .frame(height: 38)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Latest published")
+                        .font(.system(.caption2, design: .rounded, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.56))
+                    Text(snapshotText)
+                        .font(.system(.footnote, design: .rounded, weight: .bold))
+                        .foregroundStyle(.white)
+                }
                 Spacer()
                 Button(action: onOpenDetails) {
                     Text("Details")
@@ -514,61 +474,6 @@ private struct CommodityCard: View {
                 .stroke(Color.white.opacity(0.12), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.25), radius: 16, x: 0, y: 10)
-    }
-}
-
-private struct TrendSparkline: View {
-    let quote: CommodityQuote
-    let lineColor: Color
-    let realPoints: [CommodityPricePoint]
-
-    private var points: [CGFloat] {
-        if realPoints.count > 1 {
-            let prices = realPoints.map(\.price)
-            let low = prices.min() ?? 0
-            let high = prices.max() ?? 0
-            let span = max(high - low, 0.0001)
-
-            return prices.map { price in
-                let normalized = ((price - low) / span) * 2 - 1
-                return CGFloat(normalized)
-            }
-        }
-
-        let seed = quote.commodity.rawValue.unicodeScalars.map(\.value).reduce(0, +)
-        let magnitude = min(max(abs(quote.changePercent) / 3.0, 0.3), 1.4)
-
-        return (0..<20).map { index in
-            let wave = sin(CGFloat(index) * 0.55 + CGFloat(seed % 10))
-            let drift = CGFloat(index) / 19.0 * CGFloat(quote.change >= 0 ? 1 : -1) * CGFloat(magnitude) * 0.45
-            return wave * 0.22 + drift
-        }
-    }
-
-    var body: some View {
-        GeometryReader { proxy in
-            let height = proxy.size.height
-            let width = proxy.size.width
-            let step = width / CGFloat(max(points.count - 1, 1))
-
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
-
-                Path { path in
-                    for (idx, value) in points.enumerated() {
-                        let x = CGFloat(idx) * step
-                        let y = height * 0.5 - value * height * 0.42
-                        if idx == 0 {
-                            path.move(to: CGPoint(x: x, y: y))
-                        } else {
-                            path.addLine(to: CGPoint(x: x, y: y))
-                        }
-                    }
-                }
-                .stroke(lineColor, style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
-            }
-        }
     }
 }
 
@@ -688,7 +593,7 @@ private struct CommodityDetailSheet: View {
                 HStack(spacing: 8) {
                     DetailMetaPill(
                         title: "Latest Published",
-                        value: quote.marketTime?.formatted(date: .abbreviated, time: .omitted) ?? "--"
+                        value: quote.marketTime.map { SourceDateText.monthDayYear.string(from: $0) } ?? "--"
                     )
                     DetailMetaPill(title: "Cadence", value: "Daily Spot")
                 }
@@ -803,7 +708,7 @@ private struct CommodityHistoryChart: View {
                     .foregroundStyle(Color.white.opacity(0.18))
                 AxisValueLabel {
                     if let date = value.as(Date.self) {
-                        Text(date, format: xAxisFormat)
+                        Text(formatted(date, style: xAxisLabelStyle))
                             .font(.system(.caption2, design: .rounded, weight: .semibold))
                             .foregroundStyle(Color.white.opacity(0.78))
                     }
@@ -840,7 +745,7 @@ private struct CommodityHistoryChart: View {
         .overlay(alignment: .topLeading) {
             if let selectedPoint {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(selectedPoint.date, format: selectedDateFormat)
+                    Text(formatted(selectedPoint.date, style: .monthDayYear))
                         .font(.system(.caption, design: .rounded, weight: .bold))
                         .foregroundStyle(Color.white.opacity(0.72))
                     Text("$\(selectedPoint.price.formatted(.number.precision(.fractionLength(2))))")
@@ -856,25 +761,16 @@ private struct CommodityHistoryChart: View {
         }
     }
 
-    private var xAxisFormat: Date.FormatStyle {
+    private var xAxisLabelStyle: SourceAxisDateStyle {
         switch selectedRange {
         case .oneDay:
-            return .dateTime.month(.abbreviated).day()
+            return .monthDay
         case .fiveDays:
-            return .dateTime.month(.abbreviated).day()
+            return .monthDay
         case .oneMonth, .threeMonths:
-            return .dateTime.month(.abbreviated).day()
+            return .monthDay
         case .oneYear:
-            return .dateTime.month(.abbreviated)
-        }
-    }
-
-    private var selectedDateFormat: Date.FormatStyle {
-        switch selectedRange {
-        case .oneDay, .fiveDays:
-            return .dateTime.month(.abbreviated).day().year()
-        case .oneMonth, .threeMonths, .oneYear:
-            return .dateTime.month(.abbreviated).day().year()
+            return .month
         }
     }
 
@@ -941,6 +837,23 @@ private struct CommodityHistoryChart: View {
             abs(lhs.date.timeIntervalSince(date)) < abs(rhs.date.timeIntervalSince(date))
         })
     }
+
+    private func formatted(_ date: Date, style: SourceAxisDateStyle) -> String {
+        switch style {
+        case .monthDay:
+            return SourceDateText.monthDay.string(from: date)
+        case .month:
+            return SourceDateText.month.string(from: date)
+        case .monthDayYear:
+            return SourceDateText.monthDayYear.string(from: date)
+        }
+    }
+}
+
+private enum SourceAxisDateStyle {
+    case monthDay
+    case month
+    case monthDayYear
 }
 
 private struct DetailMetaPill: View {
@@ -1267,6 +1180,64 @@ private struct StatusCapsule: View {
             .padding(.vertical, 6)
             .background(tint)
             .clipShape(Capsule())
+    }
+}
+
+private struct CommodityBadgeMark: View {
+    let commodity: Commodity
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.system(size: 14, weight: .bold))
+            Text(label)
+                .font(.system(.caption, design: .rounded, weight: .bold))
+        }
+        .foregroundStyle(foreground)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(background)
+        .clipShape(Capsule())
+    }
+
+    private var label: String {
+        switch commodity {
+        case .wti:
+            return "WTI"
+        case .brent:
+            return "BRENT"
+        case .naturalGas:
+            return "GAS"
+        }
+    }
+
+    private var systemImage: String {
+        switch commodity {
+        case .wti, .brent:
+            return "drop.fill"
+        case .naturalGas:
+            return "flame.fill"
+        }
+    }
+
+    private var background: Color {
+        switch commodity {
+        case .wti:
+            return Color(red: 0.99, green: 0.76, blue: 0.26)
+        case .brent:
+            return Color(red: 0.95, green: 0.52, blue: 0.26)
+        case .naturalGas:
+            return Color(red: 0.28, green: 0.73, blue: 0.95)
+        }
+    }
+
+    private var foreground: Color {
+        switch commodity {
+        case .wti, .brent:
+            return .black
+        case .naturalGas:
+            return .white
+        }
     }
 }
 

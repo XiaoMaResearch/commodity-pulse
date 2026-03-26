@@ -120,6 +120,19 @@ final class CommodityViewModelTests: XCTestCase {
         XCTAssertEqual(offlineViewModel.articles, articles)
         XCTAssertNil(offlineViewModel.errorMessage)
     }
+
+    func testEnergyNewsForceRefreshPassesThroughToService() async {
+        let defaults = UserDefaults(suiteName: #function)!
+        defaults.removePersistentDomain(forName: #function)
+
+        let service = RecordingEnergyNewsService()
+        let viewModel = EnergyNewsViewModel(service: service, defaults: defaults)
+
+        await viewModel.refresh(force: true)
+
+        let recordedForceFlags = await service.recordedForceFlags()
+        XCTAssertEqual(recordedForceFlags, [true])
+    }
 }
 
 private struct MockCommodityService: CommodityServicing {
@@ -159,7 +172,27 @@ private actor RecordingCommodityService: CommodityServicing {
 private struct MockEnergyNewsService: EnergyNewsServicing {
     let result: Result<[EnergyNewsItem], Error>
 
-    func fetchNews() async throws -> [EnergyNewsItem] {
+    func fetchNews(forceRefresh: Bool) async throws -> [EnergyNewsItem] {
         try result.get()
+    }
+}
+
+private actor RecordingEnergyNewsService: EnergyNewsServicing {
+    private var forceFlags: [Bool] = []
+
+    func fetchNews(forceRefresh: Bool) async throws -> [EnergyNewsItem] {
+        forceFlags.append(forceRefresh)
+        return [
+            EnergyNewsItem(
+                title: "Latest EIA headline",
+                summary: "Sample summary",
+                link: URL(string: "https://www.eia.gov/todayinenergy/detail.php?id=2")!,
+                publishedAt: Date(timeIntervalSince1970: 200)
+            )
+        ]
+    }
+
+    func recordedForceFlags() -> [Bool] {
+        forceFlags
     }
 }
