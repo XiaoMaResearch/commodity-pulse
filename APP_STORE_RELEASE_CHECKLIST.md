@@ -7,6 +7,9 @@ This project now includes:
 - Unit tests under `CommodityPulseTests/`
 - Shared Xcode scheme with tests wired in
 - Production bundle identifier default: `com.xiaomaresearch.commoditypulse`
+- Daily market data from FRED/EIA for WTI, Brent, and Henry Hub natural gas
+- Energy news sourced from EIA Today in Energy with cached fallback
+- In-app article reader for news headlines
 
 Remaining admin work outside the codebase:
 
@@ -27,4 +30,5 @@ Remaining admin work outside the codebase:
 
 High-risk review item:
 
-- The app currently uses Alpha Vantage free-tier commodity endpoints. Before submission, confirm the commercial terms fit your distribution model and upgrade to a paid/live market-data plan if you need minute-level refresh at scale.
+- The app uses official daily public-data sources, not live market feeds. Your App Store copy, screenshots, and onboarding should not imply real-time or intraday trading data.
+- If you expand beyond the current FRED/EIA daily feeds later, review the commercial terms of any replacement data provider before submission.

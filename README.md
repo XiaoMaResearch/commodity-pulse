@@ -7,19 +7,21 @@ This repo includes a ready-to-use SwiftUI codebase for an iOS app that tracks:
 - Energy news headlines from EIA
 
 Features implemented:
-- Auto refresh every 1 minute
+- Optional auto refresh every 1 minute while the app is active
 - Pull-to-refresh on market, chart, and news screens
-- Pull-to-refresh gesture
 - Last updated time + market timestamp
 - Cached quotes fallback for poor connectivity
+- Cached news fallback for temporary EIA outages
 - Enhanced loading, empty, info, and error states
 - Per-commodity detail screen with historical chart
+- Touch-scrubbing on detail charts for exact date/price lookup
 - Selectable chart ranges (`1D`, `5D`, `1M`, `3M`, `1Y`)
 - Historical period stats (low, high, period change)
 - Daily trend sparklines on dashboard cards (with synthetic fallback)
 - Automatic retry/backoff on transient network failures
 - In-app Settings sheet with maintenance/disclaimer
 - Separate Energy News tab powered by EIA's official Today in Energy page
+- In-app article reader for EIA headlines
 - Free-tier catalog trimmed to WTI, Brent, and natural gas on daily FRED/EIA spot series
 - App icon asset catalog and accent color asset catalog
 - XCTest target with service and view-model coverage
@@ -37,10 +39,14 @@ Features implemented:
    - Team
    - Bundle Identifier (e.g., `com.yourname.commoditypulse`)
 5. Add your FRED API key:
-   - In Xcode, go to `Product -> Scheme -> Edit Scheme`
-   - Select `Run -> Arguments`
-   - Under `Environment Variables`, add `FRED_API_KEY`
-   - Set its value to your free FRED API key
+   - For simulator/dev runs from Xcode:
+     - `Product -> Scheme -> Edit Scheme`
+     - `Run -> Arguments`
+     - Add environment variable `FRED_API_KEY`
+   - For standalone device use after unplugging:
+     - target `Info` tab
+     - add custom property `FRED_API_KEY`
+     - set it to your free FRED API key
 6. Build and run on Simulator or iPhone.
 7. Run tests with `Cmd+U` or by selecting the `CommodityPulse` scheme and choosing `Product -> Test`.
 
@@ -96,6 +102,6 @@ Notes:
 
 ## 3) Recommended next improvements before publishing
 
-- Add selectable currency and units
-- Add UI tests for refresh and chart flows
-- Upgrade to a paid market data plan that supports minute-level updates and commercial distribution
+- Add UI tests for refresh, chart, and news-reader flows
+- Replace the local FRED key workflow with a production-safe key delivery strategy before broad distribution
+- Add final App Store screenshots, marketing copy, and a clearer in-app onboarding screen

@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import SafariServices
 
 struct ContentView: View {
     @StateObject private var viewModel = CommodityViewModel()
@@ -7,6 +8,7 @@ struct ContentView: View {
     @State private var selectedTab: AppTab = .market
     @State private var cardVisible = false
     @State private var showingSettings = false
+    @State private var selectedArticle: EnergyNewsItem?
     @Environment(\.scenePhase) private var scenePhase
 
     private var visibleQuotes: [CommodityQuote] {
@@ -107,7 +109,7 @@ struct ContentView: View {
             }
             .onDisappear { viewModel.stopAutoRefresh() }
             .sheet(isPresented: $showingSettings) {
-                SettingsSheet(viewModel: viewModel)
+                SettingsSheet(viewModel: viewModel, newsViewModel: newsViewModel)
             }
             .sheet(item: $viewModel.selectedCommodity, onDismiss: { viewModel.closeDetails() }) { commodity in
                 CommodityDetailSheet(viewModel: viewModel, commodity: commodity)
@@ -124,7 +126,8 @@ struct ContentView: View {
                 ScrollView {
                     VStack(spacing: 16) {
                         NewsHeaderPanel(
-                            lastUpdated: newsViewModel.lastUpdated
+                            lastUpdated: newsViewModel.lastUpdated,
+                            isShowingCachedArticles: newsViewModel.isShowingCachedArticles
                         )
 
                         if let error = newsViewModel.errorMessage {
@@ -138,7 +141,10 @@ struct ContentView: View {
                         } else {
                             LazyVStack(spacing: 14) {
                                 ForEach(newsViewModel.articles) { article in
-                                    EnergyNewsCard(article: article)
+                                    EnergyNewsCard(
+                                        article: article,
+                                        onOpen: { selectedArticle = article }
+                                    )
                                 }
                             }
                         }
@@ -152,6 +158,9 @@ struct ContentView: View {
             .refreshable { await newsViewModel.refresh(force: true) }
             .task {
                 await newsViewModel.refreshIfNeeded()
+            }
+            .sheet(item: $selectedArticle) { article in
+                ArticleSheet(article: article)
             }
         }
     }
@@ -1024,6 +1033,7 @@ private struct StatPill: View {
 
 private struct NewsHeaderPanel: View {
     let lastUpdated: Date?
+    let isShowingCachedArticles: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1036,6 +1046,14 @@ private struct NewsHeaderPanel: View {
                         .font(.system(.subheadline, design: .rounded, weight: .medium))
                         .foregroundStyle(Color.white.opacity(0.75))
                 }
+                Spacer()
+                if isShowingCachedArticles {
+                    StatusCapsule(
+                        title: "Cached",
+                        tint: Color(red: 0.99, green: 0.76, blue: 0.26),
+                        foreground: .black
+                    )
+                }
             }
 
             HStack(spacing: 8) {
@@ -1044,6 +1062,10 @@ private struct NewsHeaderPanel: View {
             }
             .font(.system(.footnote, design: .rounded, weight: .semibold))
             .foregroundStyle(Color.white.opacity(0.7))
+
+            Text(isShowingCachedArticles ? "Showing the most recent saved headlines because the live EIA page was unavailable." : "Pull down to refresh the latest official EIA headlines.")
+                .font(.system(.footnote, design: .rounded, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.62))
         }
         .padding(18)
         .background(
@@ -1059,9 +1081,10 @@ private struct NewsHeaderPanel: View {
 
 private struct EnergyNewsCard: View {
     let article: EnergyNewsItem
+    let onOpen: () -> Void
 
     var body: some View {
-        Link(destination: article.link) {
+        Button(action: onOpen) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top) {
                     Text("EIA")
@@ -1095,9 +1118,9 @@ private struct EnergyNewsCard: View {
                 }
 
                 HStack(spacing: 8) {
-                    Text("Open Article")
+                    Text("Read In App")
                         .font(.system(.footnote, design: .rounded, weight: .bold))
-                    Image(systemName: "arrow.up.right")
+                    Image(systemName: "safari")
                         .font(.system(size: 12, weight: .bold))
                 }
                 .foregroundStyle(Color(red: 0.99, green: 0.76, blue: 0.26))
@@ -1162,16 +1185,29 @@ private struct NewsEmptyState: View {
 
 private struct SettingsSheet: View {
     @ObservedObject var viewModel: CommodityViewModel
+    @ObservedObject var newsViewModel: EnergyNewsViewModel
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             List {
+                Section("App") {
+                    Text(ReleaseConfiguration.appStoreName)
+                    Text("Version \(appVersion)")
+                    Text("Built for informational daily energy tracking and headlines.")
+                }
+
                 Section("Data") {
                     Text("Market source: \(ReleaseConfiguration.marketDataProviderName)")
                     Text("Energy news source: \(ReleaseConfiguration.newsProviderName)")
                     Text("WTI, Brent, and natural gas are daily spot data and may not update intraday.")
-                    Text("Prices and news are for informational use only.")
+                    Text("Prices and news are for informational use only and should not be treated as trading advice.")
+                }
+
+                Section("Content") {
+                    Text("Market cards open into historical charts with the latest published observation date.")
+                    Text("News articles open inside the app using the official EIA article page.")
+                    Text("The app caches the latest quotes and headlines so it can recover more gracefully from temporary source outages.")
                 }
 
                 Section("Support") {
@@ -1196,6 +1232,9 @@ private struct SettingsSheet: View {
                     Button("Clear Cached Quotes") {
                         viewModel.clearCachedQuotes()
                     }
+                    Button("Clear Cached News") {
+                        newsViewModel.clearCachedNews()
+                    }
                 }
             }
             .navigationTitle("Settings")
@@ -1207,6 +1246,69 @@ private struct SettingsSheet: View {
         }
         .presentationDetents([.medium, .large])
     }
+
+    private var appVersion: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
+        return "\(version) (\(build))"
+    }
+}
+
+private struct StatusCapsule: View {
+    let title: String
+    let tint: Color
+    let foreground: Color
+
+    var body: some View {
+        Text(title)
+            .font(.system(.caption, design: .rounded, weight: .bold))
+            .foregroundStyle(foreground)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(tint)
+            .clipShape(Capsule())
+    }
+}
+
+private struct ArticleSheet: View {
+    let article: EnergyNewsItem
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            SafariArticleView(url: article.link)
+                .ignoresSafeArea(edges: .bottom)
+                .navigationTitle("Energy News")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("EIA")
+                                .font(.system(.caption2, design: .rounded, weight: .bold))
+                                .foregroundStyle(Color.secondary)
+                            Text(article.title)
+                                .font(.system(.subheadline, design: .rounded, weight: .bold))
+                                .lineLimit(1)
+                        }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { dismiss() }
+                    }
+                }
+        }
+    }
+}
+
+private struct SafariArticleView: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        let controller = SFSafariViewController(url: url)
+        controller.dismissButtonStyle = .close
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
 }
 
 #Preview {

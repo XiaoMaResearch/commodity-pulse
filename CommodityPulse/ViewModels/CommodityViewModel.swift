@@ -309,6 +309,7 @@ final class EnergyNewsViewModel: ObservableObject {
     @Published private(set) var lastUpdated: Date?
     @Published var errorMessage: String?
     @Published private(set) var isLoading = false
+    @Published private(set) var isShowingCachedArticles = false
 
     private let service: EnergyNewsServicing
     private let defaults: UserDefaults
@@ -344,12 +345,15 @@ final class EnergyNewsViewModel: ObservableObject {
             articles = try await service.fetchNews()
             lastUpdated = Date()
             errorMessage = nil
+            isShowingCachedArticles = false
             persistCache()
         } catch {
             if articles.isEmpty {
                 errorMessage = error.localizedDescription
+                isShowingCachedArticles = false
             } else {
                 errorMessage = nil
+                isShowingCachedArticles = true
             }
         }
     }
@@ -368,6 +372,15 @@ final class EnergyNewsViewModel: ObservableObject {
 
         articles = payload.articles
         lastUpdated = payload.lastUpdated
+        isShowingCachedArticles = !payload.articles.isEmpty
+    }
+
+    func clearCachedNews() {
+        defaults.removeObject(forKey: cacheKey)
+        articles = []
+        lastUpdated = nil
+        errorMessage = nil
+        isShowingCachedArticles = false
     }
 }
 
