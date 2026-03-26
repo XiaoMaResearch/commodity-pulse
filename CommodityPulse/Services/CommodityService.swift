@@ -21,13 +21,13 @@ enum CommodityServiceError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .apiKeyMissing:
-            return "Add your FRED API key in the Xcode scheme environment or ReleaseConfiguration before refreshing."
+            return "Add your FRED API key in the Xcode scheme environment or ReleaseConfiguration before loading historical charts."
         case .networkUnavailable:
             return "No internet connection. Please check your network and try again."
         case .requestTimedOut:
             return "Request timed out. Please try again."
         case .serverError:
-            return "The price service is temporarily unavailable."
+            return "The energy price service is temporarily unavailable."
         case .httpStatus(let code):
             return "The price service returned HTTP \(code)."
         case .invalidResponse:
@@ -76,6 +76,7 @@ struct CommodityService: CommodityServicing {
     private let apiKey: String
     private let cache: CommoditySeriesCache
     private let cacheMaxAge: TimeInterval
+    private let dailyPricesURL = URL(string: "https://www.eia.gov/todayinenergy/prices.php")!
 
     init(
         session: URLSession = .shared,
@@ -89,33 +90,9 @@ struct CommodityService: CommodityServicing {
     }
 
     func fetchQuotes(forceRefresh: Bool = false) async throws -> [CommodityQuote] {
-        guard !apiKey.isEmpty else {
-            throw CommodityServiceError.apiKeyMissing
-        }
-
-        var quotes: [CommodityQuote] = []
-        var lastError: Error = CommodityServiceError.emptyPayload
-
-        for commodity in Commodity.supportedCases {
-            do {
-                let points = try await loadSeries(for: commodity, forceRefresh: forceRefresh)
-                if let quote = makeQuote(from: points, commodity: commodity) {
-                    quotes.append(quote)
-                }
-            } catch {
-                lastError = error
-            }
-        }
-
-        let ordered = Commodity.supportedCases.compactMap { commodity in
-            quotes.first(where: { $0.commodity == commodity })
-        }
-
-        if ordered.isEmpty {
-            throw lastError
-        }
-
-        return ordered
+        let html = try await performHTMLRequest(url: dailyPricesURL, forceRefresh: forceRefresh)
+        let parser = EIADailyPricesParser(html: html)
+        return try parser.parseQuotes()
     }
 
     func fetchHistory(for commodity: Commodity, range: CommodityChartRange, forceRefresh: Bool = false) async throws -> [CommodityPricePoint] {
@@ -142,7 +119,7 @@ struct CommodityService: CommodityServicing {
         let url = try makeObservationsURL(for: commodity)
 
         do {
-            let data = try await performRequest(url: url, forceRefresh: forceRefresh)
+            let data = try await performJSONRequest(url: url, forceRefresh: forceRefresh)
             let root = try decodeRootObject(from: data)
             let points = try decodeSeries(from: root)
 
@@ -288,17 +265,42 @@ struct CommodityService: CommodityServicing {
         }
     }
 
-    private func performRequest(url: URL, forceRefresh: Bool) async throws -> Data {
+    private func performJSONRequest(url: URL, forceRefresh: Bool) async throws -> Data {
         var request = URLRequest(url: url)
         request.timeoutInterval = 20
         request.setValue("CommodityPulse/1.0", forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        applyRefreshPolicy(to: &request, forceRefresh: forceRefresh)
+
+        return try await performRequest(request)
+    }
+
+    private func performHTMLRequest(url: URL, forceRefresh: Bool) async throws -> String {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        request.setValue(
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+            forHTTPHeaderField: "User-Agent"
+        )
+        request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        applyRefreshPolicy(to: &request, forceRefresh: forceRefresh)
+
+        let data = try await performRequest(request)
+        guard let html = String(data: data, encoding: .utf8), !html.isEmpty else {
+            throw CommodityServiceError.decodingFailed
+        }
+        return html
+    }
+
+    private func applyRefreshPolicy(to request: inout URLRequest, forceRefresh: Bool) {
         request.cachePolicy = forceRefresh ? .reloadIgnoringLocalCacheData : .useProtocolCachePolicy
         if forceRefresh {
             request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
             request.setValue("no-cache", forHTTPHeaderField: "Pragma")
         }
+    }
 
+    private func performRequest(_ request: URLRequest) async throws -> Data {
         let data: Data
         let response: URLResponse
         do {
@@ -369,6 +371,145 @@ struct CommodityService: CommodityServicing {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
         formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+}
+
+private struct EIADailyPricesParser {
+    let html: String
+
+    func parseQuotes() throws -> [CommodityQuote] {
+        let quoteDate = parseQuoteDate()
+        let pageDate = parsePageDate()
+
+        let quotes = [
+            makeOilQuote(for: .wti, label: "WTI", marketDate: quoteDate),
+            makeOilQuote(for: .brent, label: "Brent", marketDate: quoteDate),
+            makeNaturalGasQuote(for: .naturalGas, region: "Louisiana", marketDate: pageDate ?? quoteDate)
+        ]
+        .compactMap { $0 }
+
+        let ordered = Commodity.supportedCases.compactMap { commodity in
+            quotes.first(where: { $0.commodity == commodity })
+        }
+
+        guard !ordered.isEmpty else {
+            throw CommodityServiceError.decodingFailed
+        }
+
+        return ordered
+    }
+
+    private func makeOilQuote(for commodity: Commodity, label: String, marketDate: Date?) -> CommodityQuote? {
+        let escapedLabel = NSRegularExpression.escapedPattern(for: label)
+        let pattern = #"<td class="s2">\s*\#(escapedLabel)\s*</td>\s*<td class="d1">\s*([^<]+?)\s*</td>\s*<td class="[^"]+">\s*([^<]+?)\s*</td>"#
+        guard let match = firstMatch(for: pattern),
+              let price = parseDouble(match[0]),
+              let percentChange = parseDouble(match[1]) else {
+            return nil
+        }
+
+        return makeQuote(
+            commodity: commodity,
+            price: price,
+            percentChange: percentChange,
+            marketDate: marketDate
+        )
+    }
+
+    private func makeNaturalGasQuote(for commodity: Commodity, region: String, marketDate: Date?) -> CommodityQuote? {
+        let escapedRegion = NSRegularExpression.escapedPattern(for: region)
+        let pattern = #"<td class="s1">\s*\#(escapedRegion)\s*</td>\s*<td class="d1">\s*([^<]+?)\s*</td>\s*<td class="[^"]+">\s*([^<]+?)\s*</td>"#
+        guard let match = firstMatch(for: pattern),
+              let price = parseDouble(match[0]),
+              let percentChange = parseDouble(match[1]) else {
+            return nil
+        }
+
+        return makeQuote(
+            commodity: commodity,
+            price: price,
+            percentChange: percentChange,
+            marketDate: marketDate
+        )
+    }
+
+    private func makeQuote(commodity: Commodity, price: Double, percentChange: Double, marketDate: Date?) -> CommodityQuote {
+        let ratio = 1 + (percentChange / 100)
+        let previousPrice = abs(ratio) < 0.000_001 ? price : price / ratio
+        let change = price - previousPrice
+
+        return CommodityQuote(
+            commodity: commodity,
+            price: price,
+            change: change,
+            changePercent: percentChange,
+            marketTime: marketDate
+        )
+    }
+
+    private func parseQuoteDate() -> Date? {
+        guard let match = firstMatch(for: #"Wholesale Spot Petroleum Prices,\s*([0-9]{1,2}/[0-9]{1,2}/[0-9]{2})\s*Close"#),
+              let dateText = match.first else {
+            return nil
+        }
+        return Self.shortDateFormatter.date(from: dateText)
+    }
+
+    private func parsePageDate() -> Date? {
+        guard let match = firstMatch(for: #"<span class="date">\s*([A-Za-z]+\s+\d{1,2},\s+\d{4})\s*</span>\s*<h1>\s*Daily Prices\s*</h1>"#),
+              let dateText = match.first else {
+            return nil
+        }
+        return Self.longDateFormatter.date(from: dateText)
+    }
+
+    private func firstMatch(for pattern: String) -> [String]? {
+        guard let regex = try? NSRegularExpression(
+            pattern: pattern,
+            options: [.caseInsensitive, .dotMatchesLineSeparators]
+        ) else {
+            return nil
+        }
+
+        let range = NSRange(location: 0, length: (html as NSString).length)
+        guard let match = regex.firstMatch(in: html, range: range) else {
+            return nil
+        }
+
+        return (1..<match.numberOfRanges).compactMap { index in
+            guard let range = Range(match.range(at: index), in: html) else {
+                return nil
+            }
+            return String(html[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    private func parseDouble(_ text: String) -> Double? {
+        let cleaned = text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: ",", with: "")
+            .replacingOccurrences(of: "$", with: "")
+
+        guard cleaned.uppercased() != "NA" else { return nil }
+        return Double(cleaned)
+    }
+
+    private static let shortDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "M/d/yy"
+        return formatter
+    }()
+
+    private static let longDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "MMMM d, yyyy"
         return formatter
     }()
 }

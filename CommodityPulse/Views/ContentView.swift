@@ -76,6 +76,7 @@ struct ContentView: View {
                         HeaderPanel(
                             lastUpdated: viewModel.lastUpdated,
                             isDataStale: viewModel.isDataStale,
+                            isRefreshing: viewModel.isLoading,
                             onSettings: { showingSettings = true }
                         )
 
@@ -153,7 +154,8 @@ struct ContentView: View {
                     VStack(spacing: 16) {
                         NewsHeaderPanel(
                             lastUpdated: newsViewModel.lastUpdated,
-                            isShowingCachedArticles: newsViewModel.isShowingCachedArticles
+                            isShowingCachedArticles: newsViewModel.isShowingCachedArticles,
+                            isRefreshing: newsViewModel.isLoading
                         )
 
                         if let error = newsViewModel.errorMessage {
@@ -256,6 +258,7 @@ private enum DashboardTheme {
 private struct HeaderPanel: View {
     let lastUpdated: Date?
     let isDataStale: Bool
+    let isRefreshing: Bool
     let onSettings: () -> Void
 
     var body: some View {
@@ -265,11 +268,15 @@ private struct HeaderPanel: View {
                     Text("Commodity Pulse")
                         .font(.system(.largeTitle, design: .rounded, weight: .heavy))
                         .foregroundStyle(.white)
-                    Text("WTI, Brent, and natural gas with EIA energy news")
+                    Text("EIA daily prices for WTI, Brent, and Henry Hub gas")
                         .font(.system(.subheadline, design: .rounded, weight: .medium))
                         .foregroundStyle(Color.white.opacity(0.75))
                 }
                 Spacer()
+
+                if isRefreshing {
+                    RefreshStatusCapsule()
+                }
 
                 Button(action: onSettings) {
                     Image(systemName: "gearshape.fill")
@@ -947,6 +954,7 @@ private struct StatPill: View {
 private struct NewsHeaderPanel: View {
     let lastUpdated: Date?
     let isShowingCachedArticles: Bool
+    let isRefreshing: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -960,12 +968,17 @@ private struct NewsHeaderPanel: View {
                         .foregroundStyle(Color.white.opacity(0.75))
                 }
                 Spacer()
-                if isShowingCachedArticles {
-                    StatusCapsule(
-                        title: "Cached",
-                        tint: Color(red: 0.99, green: 0.76, blue: 0.26),
-                        foreground: .black
-                    )
+                HStack(spacing: 8) {
+                    if isRefreshing {
+                        RefreshStatusCapsule()
+                    }
+                    if isShowingCachedArticles {
+                        StatusCapsule(
+                            title: "Cached",
+                            tint: Color(red: 0.99, green: 0.76, blue: 0.26),
+                            foreground: .black
+                        )
+                    }
                 }
             }
 
@@ -1111,9 +1124,10 @@ private struct SettingsSheet: View {
                 }
 
                 Section("Data") {
-                    Text("Market source: \(ReleaseConfiguration.marketDataProviderName)")
+                    Text("Current price source: EIA Daily Prices")
+                    Text("Historical chart source: FRED")
                     Text("Energy news source: \(ReleaseConfiguration.newsProviderName)")
-                    Text("WTI, Brent, and natural gas are daily spot data and may not update intraday.")
+                    Text("WTI and Brent reflect the latest EIA wholesale spot close. Natural gas reflects the Louisiana Henry Hub daily snapshot.")
                     Text("Prices and news are for informational use only and should not be treated as trading advice.")
                 }
 
@@ -1180,6 +1194,22 @@ private struct StatusCapsule: View {
             .padding(.vertical, 6)
             .background(tint)
             .clipShape(Capsule())
+    }
+}
+
+private struct RefreshStatusCapsule: View {
+    var body: some View {
+        HStack(spacing: 6) {
+            ProgressView()
+                .controlSize(.small)
+            Text("Refreshing")
+                .font(.system(.caption, design: .rounded, weight: .bold))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color.white.opacity(0.10))
+        .clipShape(Capsule())
     }
 }
 

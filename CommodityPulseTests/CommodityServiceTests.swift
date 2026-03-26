@@ -23,10 +23,13 @@ final class CommodityServiceTests: XCTestCase {
         let quotes = try await service.fetchQuotes(forceRefresh: false)
 
         XCTAssertEqual(quotes.map(\.commodity), [.wti, .brent, .naturalGas])
-        XCTAssertEqual(quotes.first?.price, 78.4)
-        XCTAssertEqual(quotes.first?.change ?? 0, 1.2, accuracy: 0.001)
-        XCTAssertEqual(quotes[1].price, 82.9)
-        XCTAssertEqual(quotes[2].price, 3.25)
+        XCTAssertEqual(quotes.first?.price, 91.51)
+        XCTAssertEqual(quotes.first?.changePercent, -1.8, accuracy: 0.001)
+        XCTAssertEqual(quotes[1].price, 109.14)
+        XCTAssertEqual(quotes[2].price, 2.94)
+        XCTAssertEqual(quotes[2].changePercent, 1.2, accuracy: 0.001)
+        XCTAssertEqual(quotes.first?.marketTime, makeDate(year: 2026, month: 3, day: 25))
+        XCTAssertEqual(quotes[2].marketTime, makeDate(year: 2026, month: 3, day: 26))
     }
 
     func testFetchHistoryParsesPoints() async throws {
@@ -60,7 +63,7 @@ final class CommodityServiceTests: XCTestCase {
         }
     }
 
-    func testFetchQuotesMapsRateLimitNote() async {
+    func testFetchHistoryMapsRateLimitNote() async {
         MockURLProtocol.handler = { request in
             let data = """
             {
@@ -74,7 +77,7 @@ final class CommodityServiceTests: XCTestCase {
         let service = CommodityService(session: makeSession(), apiKey: "test-key", cacheMaxAge: 0)
 
         do {
-            _ = try await service.fetchQuotes(forceRefresh: false)
+            _ = try await service.fetchHistory(for: .wti, range: .oneDay, forceRefresh: false)
             XCTFail("Expected rateLimited error")
         } catch let error as CommodityServiceError {
             XCTAssertEqual(error, .rateLimited)
@@ -102,6 +105,16 @@ final class CommodityServiceTests: XCTestCase {
         configuration.protocolClasses = [MockURLProtocol.self]
         return URLSession(configuration: configuration)
     }
+
+    private func makeDate(year: Int, month: Int, day: Int) -> Date {
+        var components = DateComponents()
+        components.calendar = Calendar(identifier: .gregorian)
+        components.timeZone = TimeZone(secondsFromGMT: 0)
+        components.year = year
+        components.month = month
+        components.day = day
+        return components.date!
+    }
 }
 
 private func responseData(for request: URLRequest) throws -> Data {
@@ -112,6 +125,46 @@ private func responseData(for request: URLRequest) throws -> Data {
 
     let payload: String
     switch url.path {
+    case "/todayinenergy/prices.php":
+        payload = """
+        <div class="tie-article">
+            <span class="date">March 26, 2026</span>
+            <h1>Daily Prices</h1>
+            <div id="section2">
+                <table>
+                    <tr class="prices_table_title">
+                        <td colspan="4"><b>Wholesale Spot Petroleum Prices, 3/25/26 Close</b></td>
+                    </tr>
+                    <tr valign="top">
+                        <td class="s1" rowspan="3">Crude Oil<br> ($/barrel)</td>
+                        <td class="s2">WTI</td>
+                        <td class="d1">91.51</td>
+                        <td class="dn">-1.8</td>
+                    </tr>
+                    <tr>
+                        <td class="s2">Brent</td>
+                        <td class="d1">109.14</td>
+                        <td class="up">+0.7</td>
+                    </tr>
+                </table>
+            </div>
+            <div id="section5">
+                <table>
+                    <tr class="prices_table_title">
+                        <td colspan="6"><b>Select Spot Prices for Delivery Today</b></td>
+                    </tr>
+                    <tr>
+                        <td class="s1">Louisiana</td>
+                        <td class="d1">2.94</td>
+                        <td class="up">+1.2</td>
+                        <td class="d1">31.50</td>
+                        <td class="dn">-9.4</td>
+                        <td class="d1">10.95</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+        """
     case "/fred/series/observations":
         let seriesID = components.queryItems?.first(where: { $0.name == "series_id" })?.value
         switch seriesID {
