@@ -3,6 +3,8 @@ import Charts
 
 struct ContentView: View {
     @StateObject private var viewModel = CommodityViewModel()
+    @StateObject private var newsViewModel = EnergyNewsViewModel()
+    @State private var selectedTab: AppTab = .market
     @State private var cardVisible = false
     @State private var showingSettings = false
     @Environment(\.scenePhase) private var scenePhase
@@ -16,6 +18,23 @@ struct ContentView: View {
     }
 
     var body: some View {
+        TabView(selection: $selectedTab) {
+            dashboardTab
+                .tabItem {
+                    Label("WTI", systemImage: "drop.fill")
+                }
+                .tag(AppTab.market)
+
+            newsTab
+                .tabItem {
+                    Label("News", systemImage: "newspaper.fill")
+                }
+                .tag(AppTab.news)
+        }
+        .tint(Color(red: 0.99, green: 0.76, blue: 0.26))
+    }
+
+    private var dashboardTab: some View {
         NavigationStack {
             ZStack {
                 DashboardTheme.background
@@ -97,6 +116,54 @@ struct ContentView: View {
             }
         }
     }
+
+    private var newsTab: some View {
+        NavigationStack {
+            ZStack {
+                DashboardTheme.background
+                    .ignoresSafeArea()
+
+                ScrollView {
+                    VStack(spacing: 16) {
+                        NewsHeaderPanel(
+                            lastUpdated: newsViewModel.lastUpdated,
+                            isLoading: newsViewModel.isLoading,
+                            onRefresh: { Task { await newsViewModel.refresh(force: true) } }
+                        )
+
+                        if let error = newsViewModel.errorMessage {
+                            ErrorPanel(message: error)
+                        }
+
+                        if newsViewModel.isLoading && newsViewModel.articles.isEmpty {
+                            NewsLoadingCards()
+                        } else if newsViewModel.articles.isEmpty {
+                            NewsEmptyState()
+                        } else {
+                            LazyVStack(spacing: 14) {
+                                ForEach(newsViewModel.articles) { article in
+                                    EnergyNewsCard(article: article)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 18)
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
+            .refreshable { await newsViewModel.refresh(force: true) }
+            .task {
+                await newsViewModel.refreshIfNeeded()
+            }
+        }
+    }
+}
+
+private enum AppTab: Hashable {
+    case market
+    case news
 }
 
 private struct SectionHeader: View {
@@ -105,7 +172,7 @@ private struct SectionHeader: View {
     var body: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("WTI + Gold")
+                Text("WTI Crude Oil")
                     .font(.system(.title3, design: .rounded, weight: .bold))
                     .foregroundStyle(.white)
                 Text(subtitle)
@@ -169,7 +236,7 @@ private struct HeaderPanel: View {
                     Text("Commodity Pulse")
                         .font(.system(.largeTitle, design: .rounded, weight: .heavy))
                         .foregroundStyle(.white)
-                    Text("Free-tier WTI and gold tracker")
+                    Text("WTI spot tracker with EIA energy news")
                         .font(.system(.subheadline, design: .rounded, weight: .medium))
                         .foregroundStyle(Color.white.opacity(0.75))
                 }
@@ -842,6 +909,167 @@ private struct StatPill: View {
     }
 }
 
+private struct NewsHeaderPanel: View {
+    let lastUpdated: Date?
+    let isLoading: Bool
+    let onRefresh: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Energy News")
+                        .font(.system(.largeTitle, design: .rounded, weight: .heavy))
+                        .foregroundStyle(.white)
+                    Text("Official \(ReleaseConfiguration.newsProviderName) headlines")
+                        .font(.system(.subheadline, design: .rounded, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.75))
+                }
+                Spacer()
+
+                Button(action: onRefresh) {
+                    HStack(spacing: 8) {
+                        if isLoading {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(.black)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        Text("Refresh")
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Color(red: 0.99, green: 0.76, blue: 0.26))
+                    .clipShape(Capsule())
+                }
+                .disabled(isLoading)
+            }
+
+            HStack(spacing: 8) {
+                Image(systemName: "clock")
+                Text("Updated \(lastUpdated?.formatted(date: .omitted, time: .standard) ?? "--")")
+            }
+            .font(.system(.footnote, design: .rounded, weight: .semibold))
+            .foregroundStyle(Color.white.opacity(0.7))
+        }
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Color.white.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+        )
+    }
+}
+
+private struct EnergyNewsCard: View {
+    let article: EnergyNewsItem
+
+    var body: some View {
+        Link(destination: article.link) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top) {
+                    Text("EIA")
+                        .font(.system(.caption, design: .rounded, weight: .bold))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color(red: 0.99, green: 0.76, blue: 0.26))
+                        .clipShape(Capsule())
+
+                    Spacer()
+
+                    if let publishedAt = article.publishedAt {
+                        Text(publishedAt.formatted(date: .abbreviated, time: .omitted))
+                            .font(.system(.caption, design: .rounded, weight: .medium))
+                            .foregroundStyle(Color.white.opacity(0.6))
+                    }
+                }
+
+                Text(article.title)
+                    .font(.system(.title3, design: .rounded, weight: .bold))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.leading)
+
+                if !article.summary.isEmpty {
+                    Text(article.summary)
+                        .font(.system(.subheadline, design: .rounded, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.72))
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(4)
+                }
+
+                HStack(spacing: 8) {
+                    Text("Open Article")
+                        .font(.system(.footnote, design: .rounded, weight: .bold))
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 12, weight: .bold))
+                }
+                .foregroundStyle(Color(red: 0.99, green: 0.76, blue: 0.26))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(18)
+            .background(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(DashboardTheme.card)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct NewsLoadingCards: View {
+    var body: some View {
+        VStack(spacing: 14) {
+            ForEach(0..<3, id: \.self) { _ in
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(Color.white.opacity(0.08))
+                    .frame(height: 150)
+                    .overlay(
+                        ProgressView()
+                            .tint(.white)
+                    )
+            }
+        }
+    }
+}
+
+private struct NewsEmptyState: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "newspaper")
+                .font(.system(size: 32, weight: .semibold))
+                .foregroundStyle(Color.white.opacity(0.7))
+            Text("No energy news yet")
+                .font(.system(.headline, design: .rounded, weight: .bold))
+                .foregroundStyle(.white)
+            Text("Pull to refresh to load the latest EIA energy headlines.")
+                .font(.system(.subheadline, design: .rounded, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.7))
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(24)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Color.white.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        )
+    }
+}
+
 private struct SettingsSheet: View {
     @ObservedObject var viewModel: CommodityViewModel
     @Environment(\.dismiss) private var dismiss
@@ -850,9 +1078,10 @@ private struct SettingsSheet: View {
         NavigationStack {
             List {
                 Section("Data") {
-                    Text("Source: \(ReleaseConfiguration.marketDataProviderName) commodity endpoints.")
-                    Text("The free-tier source uses batch commodity quotes and end-of-day historical pricing.")
-                    Text("Quotes and history may be delayed and are for informational use only.")
+                    Text("WTI source: \(ReleaseConfiguration.marketDataProviderName)")
+                    Text("Energy news source: \(ReleaseConfiguration.newsProviderName)")
+                    Text("WTI is daily spot data and may not update intraday.")
+                    Text("Prices and news are for informational use only.")
                 }
 
                 Section("Support") {
@@ -867,10 +1096,10 @@ private struct SettingsSheet: View {
 
                 Section("Preferences") {
                     Toggle("Auto Refresh Every 60 Seconds", isOn: $viewModel.isAutoRefreshEnabled)
-                    Text("Auto refresh is off by default on the free plan.")
+                    Text("Auto refresh is off by default for the daily WTI feed.")
                     Text("When enabled, refresh runs every 60 seconds while the app is active.")
-                    Text("On the free plan, provider limits and licensing terms still matter even with the higher daily quota.")
-                    Text("Manual refresh is always available from dashboard and detail chart views.")
+                    Text("WTI source data is daily, so most minute-by-minute refreshes will not change the price.")
+                    Text("Manual refresh is always available from the dashboard, chart view, and news page.")
                 }
 
                 Section("Maintenance") {

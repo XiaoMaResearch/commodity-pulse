@@ -70,7 +70,7 @@ final class CommodityViewModel: ObservableObject {
 
     var isDataStale: Bool {
         guard let lastUpdated else { return true }
-        return Date().timeIntervalSince(lastUpdated) > 180
+        return Date().timeIntervalSince(lastUpdated) > 12 * 60 * 60
     }
 
     func quote(for commodity: Commodity) -> CommodityQuote? {
@@ -93,7 +93,7 @@ final class CommodityViewModel: ObservableObject {
             quotes = newQuotes
             lastUpdated = Date()
             errorMessage = nil
-            infoMessage = "Using \(ReleaseConfiguration.marketDataProviderName) free-tier commodity snapshots."
+            infoMessage = "Using daily WTI spot data from EIA via FRED."
             persistCache()
             Task { [weak self] in
                 await self?.refreshSparklinesIfNeeded()
@@ -189,7 +189,7 @@ final class CommodityViewModel: ObservableObject {
         errorMessage = nil
         sparklinePointsByCommodity = [:]
         sparklineLastUpdated = nil
-        infoMessage = "Cache cleared. Pull to refresh for the latest provider snapshot."
+        infoMessage = "Cache cleared. Pull to refresh for the latest WTI spot data."
     }
 
     private func loadHistory(for commodity: Commodity, range: CommodityChartRange, force: Bool = false) async {
@@ -260,7 +260,7 @@ final class CommodityViewModel: ObservableObject {
               let payload = try? decoder.decode(CachePayload.self, from: data) else { return }
         quotes = payload.quotes
         lastUpdated = payload.lastUpdated
-        infoMessage = "Loaded cached prices while waiting for the latest provider snapshot."
+        infoMessage = "Loaded cached WTI prices while waiting for the latest provider snapshot."
     }
 
     private func loadAutoRefreshPreference() {
@@ -271,4 +271,232 @@ final class CommodityViewModel: ObservableObject {
         isAutoRefreshEnabled = defaults.bool(forKey: autoRefreshEnabledKey)
     }
 
+}
+
+struct EnergyNewsItem: Identifiable, Equatable {
+    let title: String
+    let summary: String
+    let link: URL
+    let publishedAt: Date?
+
+    var id: String { link.absoluteString }
+}
+
+protocol EnergyNewsServicing {
+    func fetchNews() async throws -> [EnergyNewsItem]
+}
+
+enum EnergyNewsServiceError: LocalizedError, Equatable {
+    case feedUnavailable
+    case invalidFeed
+    case emptyFeed
+
+    var errorDescription: String? {
+        switch self {
+        case .feedUnavailable:
+            return "The energy news feed is temporarily unavailable."
+        case .invalidFeed:
+            return "The energy news feed returned an unexpected format."
+        case .emptyFeed:
+            return "No energy news is available right now."
+        }
+    }
+}
+
+@MainActor
+final class EnergyNewsViewModel: ObservableObject {
+    @Published private(set) var articles: [EnergyNewsItem] = []
+    @Published private(set) var lastUpdated: Date?
+    @Published var errorMessage: String?
+    @Published private(set) var isLoading = false
+
+    private let service: EnergyNewsServicing
+
+    init(service: EnergyNewsServicing = EnergyNewsService()) {
+        self.service = service
+    }
+
+    func refreshIfNeeded() async {
+        guard articles.isEmpty else { return }
+        await refresh(force: true)
+    }
+
+    func refresh(force: Bool = false) async {
+        if isLoading { return }
+        if !force, !articles.isEmpty { return }
+
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+
+        do {
+            articles = try await service.fetchNews()
+            lastUpdated = Date()
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+struct EnergyNewsService: EnergyNewsServicing {
+    private let session: URLSession
+
+    init(session: URLSession = .shared) {
+        self.session = session
+    }
+
+    func fetchNews() async throws -> [EnergyNewsItem] {
+        guard let feedURL = ReleaseConfiguration.energyNewsFeedURL else {
+            throw EnergyNewsServiceError.invalidFeed
+        }
+
+        var request = URLRequest(url: feedURL)
+        request.timeoutInterval = 20
+        request.setValue("CommodityPulse/1.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("application/rss+xml, application/xml, text/xml", forHTTPHeaderField: "Accept")
+
+        let data: Data
+        let response: URLResponse
+
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            throw EnergyNewsServiceError.feedUnavailable
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw EnergyNewsServiceError.feedUnavailable
+        }
+
+        let parser = EnergyNewsRSSParser(data: data)
+        let items = try parser.parse()
+
+        guard !items.isEmpty else {
+            throw EnergyNewsServiceError.emptyFeed
+        }
+
+        return Array(items.prefix(20))
+    }
+}
+
+private final class EnergyNewsRSSParser: NSObject, XMLParserDelegate {
+    private let data: Data
+
+    private var items: [EnergyNewsItem] = []
+    private var currentElement = ""
+    private var currentTitle = ""
+    private var currentSummary = ""
+    private var currentLink = ""
+    private var currentPubDate = ""
+    private var insideItem = false
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    func parse() throws -> [EnergyNewsItem] {
+        let parser = XMLParser(data: data)
+        parser.delegate = self
+
+        guard parser.parse() else {
+            throw EnergyNewsServiceError.invalidFeed
+        }
+
+        return items.sorted { lhs, rhs in
+            (lhs.publishedAt ?? .distantPast) > (rhs.publishedAt ?? .distantPast)
+        }
+    }
+
+    func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String : String] = [:]) {
+        currentElement = elementName
+        if elementName == "item" {
+            insideItem = true
+            currentTitle = ""
+            currentSummary = ""
+            currentLink = ""
+            currentPubDate = ""
+        }
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        guard insideItem else { return }
+
+        switch currentElement {
+        case "title":
+            currentTitle += string
+        case "description":
+            currentSummary += string
+        case "link":
+            currentLink += string
+        case "pubDate":
+            currentPubDate += string
+        default:
+            break
+        }
+    }
+
+    func parser(_ parser: XMLParser, foundCDATA CDATABlock: Data) {
+        guard insideItem,
+              currentElement == "description",
+              let string = String(data: CDATABlock, encoding: .utf8) else {
+            return
+        }
+        currentSummary += string
+    }
+
+    func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
+        guard elementName == "item" else {
+            currentElement = ""
+            return
+        }
+
+        insideItem = false
+
+        let title = sanitize(currentTitle)
+        let summary = sanitizeHTML(currentSummary)
+        let trimmedLink = currentLink.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !title.isEmpty,
+              let link = URL(string: trimmedLink) else {
+            return
+        }
+
+        items.append(
+            EnergyNewsItem(
+                title: title,
+                summary: summary,
+                link: link,
+                publishedAt: Self.pubDateFormatter.date(from: currentPubDate.trimmingCharacters(in: .whitespacesAndNewlines))
+            )
+        )
+    }
+
+    private func sanitize(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func sanitizeHTML(_ value: String) -> String {
+        let stripped = value.replacingOccurrences(
+            of: "<[^>]+>",
+            with: " ",
+            options: .regularExpression
+        )
+        return sanitize(stripped)
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
+    }
+
+    private static let pubDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "EEE, d MMM yyyy HH:mm:ss Z"
+        return formatter
+    }()
 }

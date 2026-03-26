@@ -22,10 +22,9 @@ final class CommodityServiceTests: XCTestCase {
         let service = CommodityService(session: makeSession(), apiKey: "test-key")
         let quotes = try await service.fetchQuotes()
 
-        XCTAssertEqual(quotes.map(\.commodity), [.wti, .gold])
+        XCTAssertEqual(quotes.map(\.commodity), [.wti])
         XCTAssertEqual(quotes.first?.price, 78.4)
         XCTAssertEqual(quotes.first?.change, 1.2, accuracy: 0.001)
-        XCTAssertEqual(quotes.last?.price, 2341.0)
     }
 
     func testFetchHistoryParsesPoints() async throws {
@@ -63,7 +62,7 @@ final class CommodityServiceTests: XCTestCase {
         MockURLProtocol.handler = { request in
             let data = """
             {
-              "message": "Request limit reached. Please upgrade your plan."
+              "error_message": "Too many requests. Please try again later."
             }
             """.data(using: .utf8)!
 
@@ -95,42 +94,32 @@ private func responseData(for request: URLRequest) throws -> Data {
         throw URLError(.badURL)
     }
 
-    let symbol = components.queryItems?.first(where: { $0.name == "symbol" })?.value
-
     let payload: String
-    switch (url.path, symbol) {
-    case ("/stable/batch-commodity-quotes", _):
+    switch url.path {
+    case "/fred/series/observations":
+        let seriesID = components.queryItems?.first(where: { $0.name == "series_id" })?.value
+        guard seriesID == "DCOILWTICO" else {
+            throw URLError(.badURL)
+        }
         payload = """
-        [
-          {
-            "symbol": "CLUSD",
-            "price": 78.4,
-            "change": 1.2,
-            "changesPercentage": 1.55,
-            "timestamp": 1774051200
-          },
-          {
-            "symbol": "GCUSD",
-            "price": 2341.0,
-            "change": 13.0,
-            "changesPercentage": 0.56,
-            "timestamp": 1774051200
-          }
-        ]
-        """
-    case ("/stable/historical-price-eod/light", "CLUSD"):
-        payload = """
-        [
-          { "date": "2026-03-20", "price": "77.20" },
-          { "date": "2026-03-21", "price": "78.40" }
-        ]
-        """
-    case ("/stable/historical-price-eod/light", "GCUSD"):
-        payload = """
-        [
-          { "date": "2026-03-20", "price": "2328.00" },
-          { "date": "2026-03-21", "price": "2341.00" }
-        ]
+        {
+          "realtime_start": "2026-03-25",
+          "realtime_end": "2026-03-25",
+          "observation_start": "1776-07-04",
+          "observation_end": "9999-12-31",
+          "units": "lin",
+          "output_type": 1,
+          "file_type": "json",
+          "order_by": "observation_date",
+          "sort_order": "asc",
+          "count": 2,
+          "offset": 0,
+          "limit": 400,
+          "observations": [
+            { "date": "2026-03-20", "value": "77.20" },
+            { "date": "2026-03-21", "value": "78.40" }
+          ]
+        }
         """
     default:
         throw URLError(.badServerResponse)

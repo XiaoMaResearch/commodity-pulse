@@ -2,7 +2,7 @@
 
 This repo includes a ready-to-use SwiftUI codebase for an iOS app that tracks:
 - WTI Crude Oil
-- Gold
+- Energy news headlines from EIA
 
 Features implemented:
 - Auto refresh every 1 minute
@@ -17,7 +17,8 @@ Features implemented:
 - Daily trend sparklines on dashboard cards (with synthetic fallback)
 - Automatic retry/backoff on transient network failures
 - In-app Settings sheet with maintenance/disclaimer
-- Free-tier catalog trimmed to two sustainable instruments for FMP free-tier limits
+- Separate Energy News tab powered by EIA's RSS feed
+- Free-tier catalog trimmed to a single WTI instrument for the daily FRED/EIA data source
 - App icon asset catalog and accent color asset catalog
 - XCTest target with service and view-model coverage
 - Privacy policy and support pages under `docs/`
@@ -33,18 +34,18 @@ Features implemented:
 4. In project settings, set:
    - Team
    - Bundle Identifier (e.g., `com.yourname.commoditypulse`)
-5. Add your FMP API key:
+5. Add your FRED API key:
    - In Xcode, go to `Product -> Scheme -> Edit Scheme`
    - Select `Run -> Arguments`
-   - Under `Environment Variables`, add `FMP_API_KEY`
-   - Set its value to your free Financial Modeling Prep API key
+   - Under `Environment Variables`, add `FRED_API_KEY`
+   - Set its value to your free FRED API key
 6. Build and run on Simulator or iPhone.
 7. Run tests with `Cmd+U` or by selecting the `CommodityPulse` scheme and choosing `Product -> Test`.
 
 Notes:
-- Data source uses Financial Modeling Prep commodity endpoints.
-- The free-tier build uses batch commodity quotes and end-of-day price history.
-- The free-tier build is intentionally limited to WTI and Gold so refreshes remain workable within the daily request cap.
+- WTI price data uses the FRED `DCOILWTICO` series, sourced from the U.S. Energy Information Administration.
+- Energy headlines come from the official EIA `Today in Energy` RSS feed.
+- The WTI feed is daily spot data, not minute-by-minute futures data.
 - App Store support/privacy pages can be published from the `docs/` folder using GitHub Pages.
 
 ## 2) Publish to App Store (step-by-step)
