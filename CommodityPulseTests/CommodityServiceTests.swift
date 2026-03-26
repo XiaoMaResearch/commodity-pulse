@@ -33,6 +33,39 @@ final class CommodityServiceTests: XCTestCase {
         XCTAssertEqual(quotes[2].marketTime, makeDate(year: 2026, month: 3, day: 23))
     }
 
+    func testFetchQuotesParsesV2SeriesIDPayload() async throws {
+        MockURLProtocol.handler = { request in
+            let payload = """
+            {
+              "response": {
+                "total": "2",
+                "dateFormat": "YYYYMMDD",
+                "frequency": "daily",
+                "data": [
+                  {
+                    "period": "20260325",
+                    "value": "91.51"
+                  },
+                  {
+                    "period": "20260324",
+                    "value": "93.19"
+                  }
+                ]
+              }
+            }
+            """.data(using: .utf8)!
+
+            return try MockURLProtocol.successResponse(for: request, data: payload)
+        }
+
+        let service = CommodityService(session: makeSession(), apiKey: "fred-test-key", marketAPIKey: "eia-test-key")
+        let quotes = try await service.fetchQuotes(forceRefresh: false)
+
+        XCTAssertEqual(quotes.first?.commodity, .wti)
+        XCTAssertEqual(quotes.first?.price, 91.51)
+        XCTAssertEqual(quotes.first?.marketTime, makeDate(year: 2026, month: 3, day: 25))
+    }
+
     func testFetchQuotesFallsBackToDailyPricesPageWithoutEIAKey() async throws {
         MockURLProtocol.handler = { request in
             let data = try responseData(for: request)
@@ -142,8 +175,8 @@ private func responseData(for request: URLRequest) throws -> Data {
 
     let payload: String
     switch url.path {
-    case "/series/":
-        let seriesID = components.queryItems?.first(where: { $0.name == "series_id" })?.value
+    case let path where path.hasPrefix("/v2/seriesid/"):
+        let seriesID = String(path.dropFirst("/v2/seriesid/".count))
         switch seriesID {
         case "PET.RWTC.D":
             payload = """

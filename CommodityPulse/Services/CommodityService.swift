@@ -216,10 +216,9 @@ struct CommodityService: CommodityServicing {
         var components = URLComponents()
         components.scheme = "https"
         components.host = "api.eia.gov"
-        components.path = "/series/"
+        components.path = "/v2/seriesid/\(commodity.eiaSeriesID)"
         components.queryItems = [
             URLQueryItem(name: "api_key", value: eiaAPIKey),
-            URLQueryItem(name: "series_id", value: commodity.eiaSeriesID),
             URLQueryItem(name: "num", value: "2"),
             URLQueryItem(name: "sort", value: "desc"),
             URLQueryItem(name: "out", value: "json")
@@ -274,15 +273,24 @@ struct CommodityService: CommodityServicing {
     }
 
     private func decodeEIASeries(from root: [String: Any]) throws -> [CommodityPricePoint] {
-        guard let series = root["series"] as? [[String: Any]],
-              let entry = series.first,
-              let rows = entry["data"] as? [[Any]] else {
-#if DEBUG
-            print("CommodityService unexpected EIA payload keys=\(Array(root.keys).sorted())")
-#endif
-            throw CommodityServiceError.decodingFailed
+        if let series = root["series"] as? [[String: Any]],
+           let entry = series.first,
+           let rows = entry["data"] as? [[Any]] {
+            return try decodeLegacyEIASeriesRows(rows)
         }
 
+        if let response = root["response"] as? [String: Any],
+           let rows = response["data"] as? [[String: Any]] {
+            return try decodeV2EIASeriesRows(rows)
+        }
+
+#if DEBUG
+        print("CommodityService unexpected EIA payload keys=\(Array(root.keys).sorted())")
+#endif
+        throw CommodityServiceError.decodingFailed
+    }
+
+    private func decodeLegacyEIASeriesRows(_ rows: [[Any]]) throws -> [CommodityPricePoint] {
         let points = rows.compactMap { row -> CommodityPricePoint? in
             guard row.count >= 2,
                   let period = row[0] as? String,
@@ -300,6 +308,57 @@ struct CommodityService: CommodityServicing {
         }
 
         return points
+    }
+
+    private func decodeV2EIASeriesRows(_ rows: [[String: Any]]) throws -> [CommodityPricePoint] {
+        let points = rows.compactMap { row -> CommodityPricePoint? in
+            guard let period = row["period"] as? String,
+                  let date = parseEIASeriesDate(period),
+                  let price = parseNumericValue(v2ValueField(from: row)) else {
+                return nil
+            }
+
+            return CommodityPricePoint(date: date, price: price)
+        }
+        .sorted { $0.date < $1.date }
+
+        if points.isEmpty {
+            throw CommodityServiceError.emptyPayload
+        }
+
+        return points
+    }
+
+    private func v2ValueField(from row: [String: Any]) -> Any? {
+        if let value = row["value"] {
+            return value
+        }
+
+        if let price = row["price"] {
+            return price
+        }
+
+        let ignoredKeys: Set<String> = [
+            "period",
+            "series-description",
+            "seriesDescription",
+            "units",
+            "unit",
+            "updated",
+            "duoarea",
+            "area-name",
+            "product",
+            "process",
+            "frequency"
+        ]
+
+        for (key, value) in row where !ignoredKeys.contains(key) {
+            if parseNumericValue(value) != nil {
+                return value
+            }
+        }
+
+        return nil
     }
 
     private func providerError(from root: [String: Any]) -> CommodityServiceError? {
