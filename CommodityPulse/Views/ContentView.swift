@@ -44,9 +44,7 @@ struct ContentView: View {
                     VStack(spacing: 16) {
                         HeaderPanel(
                             lastUpdated: viewModel.lastUpdated,
-                            isLoading: viewModel.isLoading,
                             isDataStale: viewModel.isDataStale,
-                            onRefresh: { Task { await viewModel.refresh() } },
                             onSettings: { showingSettings = true }
                         )
 
@@ -126,9 +124,7 @@ struct ContentView: View {
                 ScrollView {
                     VStack(spacing: 16) {
                         NewsHeaderPanel(
-                            lastUpdated: newsViewModel.lastUpdated,
-                            isLoading: newsViewModel.isLoading,
-                            onRefresh: { Task { await newsViewModel.refresh(force: true) } }
+                            lastUpdated: newsViewModel.lastUpdated
                         )
 
                         if let error = newsViewModel.errorMessage {
@@ -224,9 +220,7 @@ private enum DashboardTheme {
 
 private struct HeaderPanel: View {
     let lastUpdated: Date?
-    let isLoading: Bool
     let isDataStale: Bool
-    let onRefresh: () -> Void
     let onSettings: () -> Void
 
     var body: some View {
@@ -242,37 +236,14 @@ private struct HeaderPanel: View {
                 }
                 Spacer()
 
-                HStack(spacing: 10) {
-                    Button(action: onSettings) {
-                        Image(systemName: "gearshape.fill")
-                            .foregroundStyle(.white)
-                            .padding(10)
-                            .background(Color.white.opacity(0.12))
-                            .clipShape(Circle())
-                    }
-                    .accessibilityLabel("Open Settings")
-
-                    Button(action: onRefresh) {
-                        HStack(spacing: 8) {
-                            if isLoading {
-                                ProgressView()
-                                    .controlSize(.small)
-                                    .tint(.black)
-                            } else {
-                                Image(systemName: "arrow.clockwise")
-                            }
-                            Text("Refresh")
-                                .fontWeight(.semibold)
-                        }
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(Color(red: 0.99, green: 0.76, blue: 0.26))
-                        .clipShape(Capsule())
-                    }
-                    .disabled(isLoading)
-                    .accessibilityLabel("Refresh Quotes")
+                Button(action: onSettings) {
+                    Image(systemName: "gearshape.fill")
+                        .foregroundStyle(.white)
+                        .padding(10)
+                        .background(Color.white.opacity(0.12))
+                        .clipShape(Circle())
                 }
+                .accessibilityLabel("Open Settings")
             }
 
             HStack(spacing: 8) {
@@ -417,7 +388,7 @@ private struct EmptyState: View {
             Text("No Quotes Available")
                 .font(.system(.headline, design: .rounded, weight: .bold))
                 .foregroundStyle(.white)
-            Text("Pull down to refresh or use the Refresh button.")
+            Text("Pull down to refresh.")
                 .font(.system(.subheadline, design: .rounded, weight: .medium))
                 .foregroundStyle(Color.white.opacity(0.75))
                 .multilineTextAlignment(.center)
@@ -644,28 +615,6 @@ private struct CommodityDetailSheet: View {
                             HistoryStatsPanel(points: viewModel.historyPoints, lineColor: lineColor)
                         }
 
-                        Button {
-                            Task { await viewModel.refreshSelectedHistory(force: true) }
-                        } label: {
-                            HStack(spacing: 8) {
-                                if viewModel.isHistoryLoading {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                        .tint(.black)
-                                } else {
-                                    Image(systemName: "arrow.clockwise")
-                                }
-                                Text("Refresh Chart Data")
-                                    .fontWeight(.semibold)
-                            }
-                            .foregroundStyle(.black)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .background(Color(red: 0.99, green: 0.76, blue: 0.26))
-                            .clipShape(Capsule())
-                        }
-                        .disabled(viewModel.isHistoryLoading)
-
                         Text("Historical data is provided for informational use only and may be delayed.")
                             .font(.system(.footnote, design: .rounded, weight: .medium))
                             .foregroundStyle(Color.white.opacity(0.7))
@@ -677,6 +626,9 @@ private struct CommodityDetailSheet: View {
                             .padding(.top, 8)
                     }
                     .padding(16)
+                }
+                .refreshable {
+                    await viewModel.refreshSelectedHistory(force: true)
                 }
             }
             .navigationTitle(commodity.name)
@@ -723,6 +675,19 @@ private struct CommodityDetailSheet: View {
                 Text(changeText)
                     .font(.system(.subheadline, design: .rounded, weight: .bold))
                     .foregroundStyle(lineColor)
+
+                HStack(spacing: 8) {
+                    DetailMetaPill(
+                        title: "Latest Published",
+                        value: quote.marketTime?.formatted(date: .abbreviated, time: .omitted) ?? "--"
+                    )
+                    DetailMetaPill(
+                        title: "Cadence",
+                        value: "Daily Spot"
+                    )
+                }
+            } else {
+                DetailMetaPill(title: "Cadence", value: "Daily Spot")
             }
         }
         .padding(16)
@@ -770,6 +735,8 @@ private struct CommodityHistoryChart: View {
     let lineColor: Color
     let selectedRange: CommodityChartRange
 
+    @State private var selectedPoint: CommodityPricePoint?
+
     var body: some View {
         Chart(points) { point in
             AreaMark(
@@ -791,30 +758,69 @@ private struct CommodityHistoryChart: View {
             .interpolationMethod(.catmullRom)
             .foregroundStyle(lineColor)
             .lineStyle(StrokeStyle(lineWidth: 2.6, lineCap: .round, lineJoin: .round))
+
+            if let selectedPoint {
+                RuleMark(x: .value("Selected Time", selectedPoint.date))
+                    .foregroundStyle(Color.white.opacity(0.35))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+
+                PointMark(
+                    x: .value("Selected Time", selectedPoint.date),
+                    y: .value("Selected Price", selectedPoint.price)
+                )
+                .symbolSize(70)
+                .foregroundStyle(lineColor)
+            }
+        }
+        .chartXScale(domain: chartDomain)
+        .chartOverlay { proxy in
+            GeometryReader { geometry in
+                Rectangle()
+                    .fill(.clear)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in
+                                let frame = geometry[proxy.plotAreaFrame]
+                                guard frame.contains(value.location) else { return }
+                                let xPosition = value.location.x - frame.origin.x
+                                guard let date: Date = proxy.value(atX: xPosition) else { return }
+                                selectedPoint = nearestPoint(to: date)
+                            }
+                            .onEnded { _ in }
+                    )
+            }
         }
         .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 4)) { value in
-                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.3))
-                    .foregroundStyle(Color.white.opacity(0.12))
+            AxisMarks(values: xAxisDates) { value in
+                AxisTick(stroke: StrokeStyle(lineWidth: 0.8))
+                    .foregroundStyle(Color.white.opacity(0.18))
                 AxisValueLabel {
                     if let date = value.as(Date.self) {
                         Text(date, format: xAxisFormat)
+                            .font(.system(.caption2, design: .rounded, weight: .semibold))
                             .foregroundStyle(Color.white.opacity(0.78))
                     }
                 }
             }
         }
         .chartYAxis {
-            AxisMarks(position: .leading) { value in
+            AxisMarks(position: .leading, values: yAxisValues) { value in
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 0.3))
                     .foregroundStyle(Color.white.opacity(0.12))
                 AxisValueLabel {
                     if let price = value.as(Double.self) {
                         Text("$\(price.formatted(.number.precision(.fractionLength(0...2))))")
+                            .font(.system(.caption2, design: .rounded, weight: .semibold))
                             .foregroundStyle(Color.white.opacity(0.78))
                     }
                 }
             }
+        }
+        .chartPlotStyle { plotContent in
+            plotContent
+                .background(Color.white.opacity(0.03))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .padding(14)
         .background(
@@ -825,6 +831,23 @@ private struct CommodityHistoryChart: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(Color.white.opacity(0.12), lineWidth: 1)
         )
+        .overlay(alignment: .topLeading) {
+            if let selectedPoint {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(selectedPoint.date, format: selectedDateFormat)
+                        .font(.system(.caption, design: .rounded, weight: .bold))
+                        .foregroundStyle(Color.white.opacity(0.72))
+                    Text("$\(selectedPoint.price.formatted(.number.precision(.fractionLength(2))))")
+                        .font(.system(.headline, design: .rounded, weight: .heavy))
+                        .foregroundStyle(.white)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color.black.opacity(0.35))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .padding(12)
+            }
+        }
     }
 
     private var xAxisFormat: Date.FormatStyle {
@@ -832,12 +855,105 @@ private struct CommodityHistoryChart: View {
         case .oneDay:
             return .dateTime.month(.abbreviated).day()
         case .fiveDays:
-            return .dateTime.weekday(.abbreviated)
+            return .dateTime.month(.abbreviated).day()
         case .oneMonth, .threeMonths:
             return .dateTime.month(.abbreviated).day()
         case .oneYear:
             return .dateTime.month(.abbreviated)
         }
+    }
+
+    private var selectedDateFormat: Date.FormatStyle {
+        switch selectedRange {
+        case .oneDay, .fiveDays:
+            return .dateTime.month(.abbreviated).day().year()
+        case .oneMonth, .threeMonths, .oneYear:
+            return .dateTime.month(.abbreviated).day().year()
+        }
+    }
+
+    private var chartDomain: ClosedRange<Date> {
+        let lower = points.first?.date ?? Date()
+        let upper = points.last?.date ?? Date()
+        return lower...upper
+    }
+
+    private var xAxisDates: [Date] {
+        guard !points.isEmpty else { return [] }
+
+        switch selectedRange {
+        case .oneDay:
+            return deduplicatedDates([points.first?.date, points.last?.date])
+        case .fiveDays:
+            return points.map(\.date)
+        case .oneMonth:
+            return evenlySpacedDates(targetCount: 4)
+        case .threeMonths:
+            return evenlySpacedDates(targetCount: 5)
+        case .oneYear:
+            return evenlySpacedDates(targetCount: 6)
+        }
+    }
+
+    private var yAxisValues: [Double] {
+        let prices = points.map(\.price)
+        guard let low = prices.min(), let high = prices.max() else { return [] }
+        if abs(high - low) < 0.0001 { return [low] }
+        let midpoint = (low + high) / 2
+        return [low, midpoint, high]
+    }
+
+    private func evenlySpacedDates(targetCount: Int) -> [Date] {
+        guard !points.isEmpty else { return [] }
+        guard points.count > targetCount else { return points.map(\.date) }
+
+        let maxIndex = points.count - 1
+        let step = Double(maxIndex) / Double(max(targetCount - 1, 1))
+
+        let dates = (0..<targetCount).map { position in
+            let index = Int(round(Double(position) * step))
+            return points[min(index, maxIndex)].date
+        }
+
+        return deduplicatedDates(dates)
+    }
+
+    private func deduplicatedDates(_ dates: [Date?]) -> [Date] {
+        var seen = Set<TimeInterval>()
+        return dates.compactMap { $0 }.filter { date in
+            let key = date.timeIntervalSince1970
+            if seen.contains(key) {
+                return false
+            }
+            seen.insert(key)
+            return true
+        }
+    }
+
+    private func nearestPoint(to date: Date) -> CommodityPricePoint? {
+        points.min(by: { lhs, rhs in
+            abs(lhs.date.timeIntervalSince(date)) < abs(rhs.date.timeIntervalSince(date))
+        })
+    }
+}
+
+private struct DetailMetaPill: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.system(.caption2, design: .rounded, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.56))
+            Text(value)
+                .font(.system(.footnote, design: .rounded, weight: .bold))
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color.white.opacity(0.07))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 
@@ -911,8 +1027,6 @@ private struct StatPill: View {
 
 private struct NewsHeaderPanel: View {
     let lastUpdated: Date?
-    let isLoading: Bool
-    let onRefresh: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -925,27 +1039,6 @@ private struct NewsHeaderPanel: View {
                         .font(.system(.subheadline, design: .rounded, weight: .medium))
                         .foregroundStyle(Color.white.opacity(0.75))
                 }
-                Spacer()
-
-                Button(action: onRefresh) {
-                    HStack(spacing: 8) {
-                        if isLoading {
-                            ProgressView()
-                                .controlSize(.small)
-                                .tint(.black)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                        Text("Refresh")
-                            .fontWeight(.semibold)
-                    }
-                    .foregroundStyle(.black)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Color(red: 0.99, green: 0.76, blue: 0.26))
-                    .clipShape(Capsule())
-                }
-                .disabled(isLoading)
             }
 
             HStack(spacing: 8) {
