@@ -347,14 +347,29 @@ struct EnergyNewsService: EnergyNewsServicing {
     }
 
     func fetchNews() async throws -> [EnergyNewsItem] {
-        guard let feedURL = ReleaseConfiguration.energyNewsFeedURL else {
+        guard !ReleaseConfiguration.energyNewsPageURLs.isEmpty else {
             throw EnergyNewsServiceError.invalidFeed
         }
 
-        var request = URLRequest(url: feedURL)
+        for pageURL in ReleaseConfiguration.energyNewsPageURLs {
+            do {
+                let items = try await fetchNews(from: pageURL)
+                if !items.isEmpty {
+                    return Array(items.prefix(20))
+                }
+            } catch {
+                continue
+            }
+        }
+
+        throw EnergyNewsServiceError.feedUnavailable
+    }
+
+    private func fetchNews(from pageURL: URL) async throws -> [EnergyNewsItem] {
+        var request = URLRequest(url: pageURL)
         request.timeoutInterval = 20
-        request.setValue("CommodityPulse/1.0", forHTTPHeaderField: "User-Agent")
-        request.setValue("application/rss+xml, application/xml, text/xml", forHTTPHeaderField: "Accept")
+        request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
+        request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
 
         let data: Data
         let response: URLResponse
@@ -370,37 +385,61 @@ struct EnergyNewsService: EnergyNewsServicing {
             throw EnergyNewsServiceError.feedUnavailable
         }
 
-        let parser = EnergyNewsRSSParser(data: data)
+        let parser = EnergyNewsHTMLParser(data: data, baseURL: pageURL)
         let items = try parser.parse()
 
         guard !items.isEmpty else {
             throw EnergyNewsServiceError.emptyFeed
         }
 
-        return Array(items.prefix(20))
+        return items
     }
 }
 
-private final class EnergyNewsRSSParser: NSObject, XMLParserDelegate {
+private struct EnergyNewsHTMLParser {
     private let data: Data
+    private let baseURL: URL
 
-    private var items: [EnergyNewsItem] = []
-    private var currentElement = ""
-    private var currentTitle = ""
-    private var currentSummary = ""
-    private var currentLink = ""
-    private var currentPubDate = ""
-    private var insideItem = false
-
-    init(data: Data) {
+    init(data: Data, baseURL: URL) {
         self.data = data
+        self.baseURL = baseURL
     }
 
     func parse() throws -> [EnergyNewsItem] {
-        let parser = XMLParser(data: data)
-        parser.delegate = self
+        guard let html = String(data: data, encoding: .utf8), !html.isEmpty else {
+            throw EnergyNewsServiceError.invalidFeed
+        }
 
-        guard parser.parse() else {
+        let nsHTML = html as NSString
+        let matches = Self.articlePattern.matches(in: html, range: NSRange(location: 0, length: nsHTML.length))
+        let items = matches.compactMap { match -> EnergyNewsItem? in
+            guard match.numberOfRanges == 5,
+                  let dateRange = Range(match.range(at: 1), in: html),
+                  let linkRange = Range(match.range(at: 2), in: html),
+                  let titleRange = Range(match.range(at: 3), in: html),
+                  let bodyRange = Range(match.range(at: 4), in: html) else {
+                return nil
+            }
+
+            let dateText = html[dateRange].trimmingCharacters(in: .whitespacesAndNewlines)
+            let relativeLink = html[linkRange].trimmingCharacters(in: .whitespacesAndNewlines)
+            let title = sanitizeHTML(String(html[titleRange]))
+            let summary = extractSummary(from: String(html[bodyRange]))
+
+            guard !title.isEmpty,
+                  let link = URL(string: relativeLink, relativeTo: baseURL)?.absoluteURL else {
+                return nil
+            }
+
+            return EnergyNewsItem(
+                title: title,
+                summary: summary.isEmpty ? "Tap to read the full article on EIA." : summary,
+                link: link,
+                publishedAt: Self.pageDateFormatter.date(from: dateText)
+            )
+        }
+
+        guard !items.isEmpty else {
             throw EnergyNewsServiceError.invalidFeed
         }
 
@@ -409,94 +448,94 @@ private final class EnergyNewsRSSParser: NSObject, XMLParserDelegate {
         }
     }
 
-    func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String : String] = [:]) {
-        currentElement = elementName
-        if elementName == "item" {
-            insideItem = true
-            currentTitle = ""
-            currentSummary = ""
-            currentLink = ""
-            currentPubDate = ""
-        }
-    }
-
-    func parser(_ parser: XMLParser, foundCharacters string: String) {
-        guard insideItem else { return }
-
-        switch currentElement {
-        case "title":
-            currentTitle += string
-        case "description":
-            currentSummary += string
-        case "link":
-            currentLink += string
-        case "pubDate":
-            currentPubDate += string
-        default:
-            break
-        }
-    }
-
-    func parser(_ parser: XMLParser, foundCDATA CDATABlock: Data) {
-        guard insideItem,
-              currentElement == "description",
-              let string = String(data: CDATABlock, encoding: .utf8) else {
-            return
-        }
-        currentSummary += string
-    }
-
-    func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
-        guard elementName == "item" else {
-            currentElement = ""
-            return
-        }
-
-        insideItem = false
-
-        let title = sanitize(currentTitle)
-        let summary = sanitizeHTML(currentSummary)
-        let trimmedLink = currentLink.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !title.isEmpty,
-              let link = URL(string: trimmedLink) else {
-            return
-        }
-
-        items.append(
-            EnergyNewsItem(
-                title: title,
-                summary: summary,
-                link: link,
-                publishedAt: Self.pubDateFormatter.date(from: currentPubDate.trimmingCharacters(in: .whitespacesAndNewlines))
-            )
+    private func extractSummary(from articleHTML: String) -> String {
+        let cleanedHTML = Self.stripDecorativeElements(in: articleHTML)
+        let nsArticle = cleanedHTML as NSString
+        let paragraphMatches = Self.paragraphPattern.matches(
+            in: cleanedHTML,
+            range: NSRange(location: 0, length: nsArticle.length)
         )
+
+        for match in paragraphMatches {
+            guard match.numberOfRanges > 1,
+                  let range = Range(match.range(at: 1), in: cleanedHTML) else {
+                continue
+            }
+
+            let candidate = sanitizeHTML(String(cleanedHTML[range]))
+            if candidate.count >= 40 {
+                return candidate
+            }
+        }
+
+        return sanitizeHTML(cleanedHTML)
     }
 
-    private func sanitize(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+    private static func stripDecorativeElements(in html: String) -> String {
+        var result = html
+        for pattern in removalPatterns {
+            result = replace(pattern: pattern, in: result, with: " ")
+        }
+        return result
     }
 
     private func sanitizeHTML(_ value: String) -> String {
-        let stripped = value.replacingOccurrences(
-            of: "<[^>]+>",
-            with: " ",
-            options: .regularExpression
-        )
-        return sanitize(stripped)
+        let stripped = Self.replace(pattern: "<[^>]+>", in: value, with: " ")
+        return Self.decodeHTML(in: stripped)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func replace(pattern: String, in text: String, with replacement: String) -> String {
+        guard let regex = try? NSRegularExpression(
+            pattern: pattern,
+            options: [.caseInsensitive, .dotMatchesLineSeparators]
+        ) else {
+            return text
+        }
+        let range = NSRange(location: 0, length: (text as NSString).length)
+        return regex.stringByReplacingMatches(in: text, range: range, withTemplate: replacement)
+    }
+
+    private static func decodeHTML(in value: String) -> String {
+        value
             .replacingOccurrences(of: "&nbsp;", with: " ")
             .replacingOccurrences(of: "&amp;", with: "&")
             .replacingOccurrences(of: "&quot;", with: "\"")
             .replacingOccurrences(of: "&#39;", with: "'")
+            .replacingOccurrences(of: "&rsquo;", with: "'")
+            .replacingOccurrences(of: "&lsquo;", with: "'")
+            .replacingOccurrences(of: "&ldquo;", with: "\"")
+            .replacingOccurrences(of: "&rdquo;", with: "\"")
+            .replacingOccurrences(of: "&mdash;", with: "--")
+            .replacingOccurrences(of: "&ndash;", with: "-")
+            .replacingOccurrences(of: "&rsaquo;", with: ">")
+            .replacingOccurrences(of: "&lsaquo;", with: "<")
+            .replacingOccurrences(of: "&#160;", with: " ")
     }
 
-    private static let pubDateFormatter: DateFormatter = {
+    private static let pageDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "EEE, d MMM yyyy HH:mm:ss Z"
+        formatter.dateFormat = "MMM d, yyyy"
         return formatter
     }()
+
+    private static let articlePattern = try! NSRegularExpression(
+        pattern: #"<span class="date">\s*([^<]+?)\s*</span>\s*<h1>\s*<a href="([^"]+)">(.+?)</a>\s*</h1>(.*?)<a href="[^"]+" class="link-button">Read More"#,
+        options: [.caseInsensitive, .dotMatchesLineSeparators]
+    )
+
+    private static let paragraphPattern = try! NSRegularExpression(
+        pattern: #"<p(?:\s[^>]*)?>(.*?)</p>"#,
+        options: [.caseInsensitive, .dotMatchesLineSeparators]
+    )
+
+    private static let removalPatterns = [
+        #"<div class="source">.*?</div>"#,
+        #"<img[^>]*>"#,
+        #"<hr[^>]*>"#,
+        #"<figure[^>]*>.*?</figure>"#,
+        #"<script[^>]*>.*?</script>"#
+    ]
 }

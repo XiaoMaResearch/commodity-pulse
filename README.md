@@ -19,7 +19,7 @@ Features implemented:
 - Daily trend sparklines on dashboard cards (with synthetic fallback)
 - Automatic retry/backoff on transient network failures
 - In-app Settings sheet with maintenance/disclaimer
-- Separate Energy News tab powered by EIA's RSS feed
+- Separate Energy News tab powered by EIA's official Today in Energy page
 - Free-tier catalog trimmed to WTI, Brent, and natural gas on daily FRED/EIA spot series
 - App icon asset catalog and accent color asset catalog
 - XCTest target with service and view-model coverage
@@ -49,7 +49,7 @@ Notes:
   - `DCOILWTICO` for WTI
   - `DCOILBRENTEU` for Brent
   - `DHHNGSP` for Henry Hub natural gas
-- Energy headlines come from the official EIA `Today in Energy` RSS feed.
+- Energy headlines come from the official EIA `Today in Energy` website.
 - These feeds are daily spot data, not minute-by-minute futures data.
 - App Store support/privacy pages can be published from the `docs/` folder using GitHub Pages.
 

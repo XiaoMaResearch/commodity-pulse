@@ -7,7 +7,10 @@ enum ReleaseConfiguration {
     static let newsProviderName = "EIA Today in Energy"
     static let supportURL = URL(string: "https://xiaomaresearch.github.io/commodity-pulse/support.html")
     static let privacyPolicyURL = URL(string: "https://xiaomaresearch.github.io/commodity-pulse/privacy-policy.html")
-    static let energyNewsFeedURL = URL(string: "https://www.eia.gov/rss/todayinenergy.xml")
+    static let energyNewsPageURLs = [
+        URL(string: "https://www.eia.gov/todayinenergy/"),
+        URL(string: "https://www.eia.gov/todayinenergy/index.php?tg=energy")
+    ].compactMap { $0 }
     static let supportEmail = "maxiaodage1@gmail.com"
 
     // Keep this empty in source control. Prefer injecting FRED_API_KEY
