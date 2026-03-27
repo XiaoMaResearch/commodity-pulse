@@ -1066,6 +1066,11 @@ private struct EnergyNewsCard: View {
     }
 
     private var sourceLabel: String {
+        if let sourceName = article.sourceName,
+           !sourceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return sourceName
+        }
+
         guard let host = article.link.host?.lowercased() else {
             return "News"
         }

@@ -227,6 +227,21 @@ struct EnergyNewsItem: Identifiable, Equatable, Codable {
     let summary: String
     let link: URL
     let publishedAt: Date?
+    let sourceName: String?
+
+    init(
+        title: String,
+        summary: String,
+        link: URL,
+        publishedAt: Date?,
+        sourceName: String? = nil
+    ) {
+        self.title = title
+        self.summary = summary
+        self.link = link
+        self.publishedAt = publishedAt
+        self.sourceName = sourceName
+    }
 
     var id: String { link.absoluteString }
 }
@@ -384,15 +399,17 @@ struct EnergyNewsService: EnergyNewsServicing {
 
         let deduped = dedupedArticles(aggregated)
         let todayOnly = articlesPublishedToday(from: deduped)
+        let relevantToday = relevantArticles(from: todayOnly)
+        let sorted = relevantToday
             .sorted { lhs, rhs in
                 (lhs.publishedAt ?? .distantPast) > (rhs.publishedAt ?? .distantPast)
             }
 
-        guard !todayOnly.isEmpty else {
+        guard !sorted.isEmpty else {
             throw EnergyNewsServiceError.emptyFeed
         }
 
-        return Array(todayOnly.prefix(20))
+        return Array(sorted.prefix(20))
     }
 
     private func fetchNews(from source: Source, forceRefresh: Bool) async throws -> [EnergyNewsItem] {
@@ -455,6 +472,15 @@ struct EnergyNewsService: EnergyNewsServicing {
         }
     }
 
+    private func relevantArticles(from items: [EnergyNewsItem]) -> [EnergyNewsItem] {
+        items.filter { item in
+            let corpus = "\(item.title) \(item.summary)".lowercased()
+            return Self.energyKeywords.contains { keyword in
+                corpus.contains(keyword)
+            }
+        }
+    }
+
     private static let defaultSources: [Source] = {
         var configured: [Source] = [
             Source(
@@ -471,6 +497,16 @@ struct EnergyNewsService: EnergyNewsServicing {
                 name: "OilPrice RSS",
                 url: URL(string: "https://oilprice.com/rss.xml")!,
                 kind: .rss
+            ),
+            Source(
+                name: "NYT Energy & Environment RSS",
+                url: URL(string: "https://rss.nytimes.com/services/xml/rss/nyt/EnergyEnvironment.xml")!,
+                kind: .rss
+            ),
+            Source(
+                name: "BBC Business RSS",
+                url: URL(string: "https://feeds.bbci.co.uk/news/business/rss.xml")!,
+                kind: .rss
             )
         ]
 
@@ -482,6 +518,28 @@ struct EnergyNewsService: EnergyNewsServicing {
 
         return configured
     }()
+
+    private static let energyKeywords: [String] = [
+        "energy",
+        "oil",
+        "gas",
+        "natural gas",
+        "lng",
+        "crude",
+        "brent",
+        "wti",
+        "petroleum",
+        "refinery",
+        "diesel",
+        "gasoline",
+        "opec",
+        "pipeline",
+        "shale",
+        "drilling",
+        "rig",
+        "upstream",
+        "downstream"
+    ]
 }
 
 private struct EnergyNewsRSSParser {
@@ -523,6 +581,7 @@ private final class EnergyNewsRSSDelegate: NSObject, XMLParserDelegate {
     private var linkText = ""
     private var descriptionText = ""
     private var pubDateText = ""
+    private var sourceText = ""
 
     init(baseURL: URL) {
         self.baseURL = baseURL
@@ -544,6 +603,7 @@ private final class EnergyNewsRSSDelegate: NSObject, XMLParserDelegate {
             linkText = ""
             descriptionText = ""
             pubDateText = ""
+            sourceText = ""
         }
     }
 
@@ -574,6 +634,8 @@ private final class EnergyNewsRSSDelegate: NSObject, XMLParserDelegate {
             descriptionText = value
         case "pubdate":
             pubDateText = value
+        case "source":
+            sourceText = value
         case "item":
             appendCurrentItem()
             isInItem = false
@@ -583,7 +645,8 @@ private final class EnergyNewsRSSDelegate: NSObject, XMLParserDelegate {
     }
 
     private func appendCurrentItem() {
-        let cleanTitle = sanitizeText(titleText)
+        let parsed = normalizedTitleAndSource(from: sanitizeText(titleText), source: sanitizeText(sourceText))
+        let cleanTitle = parsed.title
         let cleanSummary = sanitizeText(descriptionText)
 
         guard !cleanTitle.isEmpty,
@@ -599,9 +662,27 @@ private final class EnergyNewsRSSDelegate: NSObject, XMLParserDelegate {
                 title: cleanTitle,
                 summary: summary,
                 link: link,
-                publishedAt: publishedAt
+                publishedAt: publishedAt,
+                sourceName: parsed.source
             )
         )
+    }
+
+    private func normalizedTitleAndSource(from title: String, source: String) -> (title: String, source: String?) {
+        if !source.isEmpty {
+            return (title, source)
+        }
+
+        let separator = " - "
+        if let range = title.range(of: separator, options: .backwards) {
+            let headline = String(title[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let outlet = String(title[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !headline.isEmpty, !outlet.isEmpty {
+                return (headline, outlet)
+            }
+        }
+
+        return (title, nil)
     }
 
     private func sanitizeText(_ input: String) -> String {
@@ -699,7 +780,8 @@ private struct EnergyNewsHTMLParser {
                 title: title,
                 summary: summary.isEmpty ? "Tap to read the full article on EIA." : summary,
                 link: link,
-                publishedAt: Self.pageDateFormatter.date(from: dateText)
+                publishedAt: Self.pageDateFormatter.date(from: dateText),
+                sourceName: "EIA"
             )
         }
 
