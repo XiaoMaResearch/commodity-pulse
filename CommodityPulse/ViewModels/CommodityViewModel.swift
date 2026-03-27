@@ -507,6 +507,11 @@ struct EnergyNewsService: EnergyNewsServicing {
                 name: "BBC Business RSS",
                 url: URL(string: "https://feeds.bbci.co.uk/news/business/rss.xml")!,
                 kind: .rss
+            ),
+            Source(
+                name: "Guardian Oil RSS",
+                url: URL(string: "https://www.theguardian.com/business/oil/rss")!,
+                kind: .rss
             )
         ]
 
@@ -656,6 +661,7 @@ private final class EnergyNewsRSSDelegate: NSObject, XMLParserDelegate {
 
         let publishedAt = EnergyNewsDateParser.parse(pubDateText)
         let summary = cleanSummary.isEmpty ? "Tap to read the full article." : cleanSummary
+        let inferredSource = inferSourceName(from: link)
 
         items.append(
             EnergyNewsItem(
@@ -663,7 +669,7 @@ private final class EnergyNewsRSSDelegate: NSObject, XMLParserDelegate {
                 summary: summary,
                 link: link,
                 publishedAt: publishedAt,
-                sourceName: parsed.source
+                sourceName: parsed.source ?? inferredSource
             )
         )
     }
@@ -683,6 +689,29 @@ private final class EnergyNewsRSSDelegate: NSObject, XMLParserDelegate {
         }
 
         return (title, nil)
+    }
+
+    private func inferSourceName(from link: URL) -> String? {
+        guard let host = link.host?.lowercased() else {
+            return nil
+        }
+
+        if host.contains("eia.gov") {
+            return "EIA"
+        }
+        if host.contains("oilprice.com") {
+            return "OilPrice"
+        }
+        if host.contains("nytimes.com") {
+            return "NYTimes"
+        }
+        if host.contains("bbc.") || host.contains("bbci.") {
+            return "BBC"
+        }
+        if host.contains("theguardian.com") || host.contains("guardian.co.uk") {
+            return "Guardian"
+        }
+        return nil
     }
 
     private func sanitizeText(_ input: String) -> String {

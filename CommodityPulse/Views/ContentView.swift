@@ -1083,6 +1083,18 @@ private struct EnergyNewsCard: View {
             return "OilPrice"
         }
 
+        if host.contains("nytimes.com") {
+            return "NYTimes"
+        }
+
+        if host.contains("bbc.") || host.contains("bbci.") {
+            return "BBC"
+        }
+
+        if host.contains("theguardian.com") || host.contains("guardian.co.uk") {
+            return "Guardian"
+        }
+
         return "News"
     }
 }
