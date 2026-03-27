@@ -963,7 +963,7 @@ private struct NewsHeaderPanel: View {
                     Text("Energy News")
                         .font(.system(.largeTitle, design: .rounded, weight: .heavy))
                         .foregroundStyle(.white)
-                    Text("Official \(ReleaseConfiguration.newsProviderName) headlines")
+                    Text("Same-day headlines from multiple energy sources")
                         .font(.system(.subheadline, design: .rounded, weight: .medium))
                         .foregroundStyle(Color.white.opacity(0.75))
                 }
@@ -989,7 +989,7 @@ private struct NewsHeaderPanel: View {
             .font(.system(.footnote, design: .rounded, weight: .semibold))
             .foregroundStyle(Color.white.opacity(0.7))
 
-            Text(isShowingCachedArticles ? "Showing the most recent saved headlines because the live EIA page was unavailable." : "Pull down to refresh the latest official EIA headlines.")
+            Text(isShowingCachedArticles ? "Showing the most recent saved headlines because live sources were unavailable." : "Pull down to refresh today's headlines from all sources.")
                 .font(.system(.footnote, design: .rounded, weight: .medium))
                 .foregroundStyle(Color.white.opacity(0.62))
         }
@@ -1013,7 +1013,7 @@ private struct EnergyNewsCard: View {
         Button(action: onOpen) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top) {
-                    Text("EIA")
+                    Text(sourceLabel)
                         .font(.system(.caption, design: .rounded, weight: .bold))
                         .foregroundStyle(.black)
                         .padding(.horizontal, 10)
@@ -1063,6 +1063,22 @@ private struct EnergyNewsCard: View {
             )
         }
         .buttonStyle(.plain)
+    }
+
+    private var sourceLabel: String {
+        guard let host = article.link.host?.lowercased() else {
+            return "News"
+        }
+
+        if host.contains("eia.gov") {
+            return "EIA"
+        }
+
+        if host.contains("oilprice.com") {
+            return "OilPrice"
+        }
+
+        return "News"
     }
 }
 
@@ -1126,14 +1142,15 @@ private struct SettingsSheet: View {
                 Section("Data") {
                     Text("Current price source: EIA API daily series")
                     Text("Historical chart source: FRED")
-                    Text("Energy news source: \(ReleaseConfiguration.newsProviderName)")
+                    Text("Energy news sources: EIA Today in Energy, EIA Press Releases, OilPrice RSS")
                     Text("WTI, Brent, and natural gas use official EIA daily series when an EIA API key is configured.")
                     Text("Prices and news are for informational use only and should not be treated as trading advice.")
                 }
 
                 Section("Content") {
                     Text("Market cards open into historical charts with the latest published observation date.")
-                    Text("News articles open inside the app using the official EIA article page.")
+                    Text("The News tab shows only headlines published on the current day.")
+                    Text("News articles open inside the app for the original source page.")
                     Text("The app caches the latest quotes and headlines so it can recover more gracefully from temporary source outages.")
                 }
 

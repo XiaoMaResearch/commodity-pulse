@@ -247,7 +247,7 @@ enum EnergyNewsServiceError: LocalizedError, Equatable {
         case .invalidFeed:
             return "The energy news feed returned an unexpected format."
         case .emptyFeed:
-            return "No energy news is available right now."
+            return "No energy news was published today yet."
         }
     }
 }
@@ -334,36 +334,63 @@ final class EnergyNewsViewModel: ObservableObject {
 }
 
 struct EnergyNewsService: EnergyNewsServicing {
+    private enum SourceKind {
+        case rss
+        case html
+    }
+
+    private struct Source {
+        let name: String
+        let url: URL
+        let kind: SourceKind
+    }
+
     private let session: URLSession
+    private let sources: [Source]
 
     init(session: URLSession = .shared) {
         self.session = session
+        self.sources = Self.defaultSources
     }
 
     func fetchNews(forceRefresh: Bool = false) async throws -> [EnergyNewsItem] {
-        guard !ReleaseConfiguration.energyNewsPageURLs.isEmpty else {
+        guard !sources.isEmpty else {
             throw EnergyNewsServiceError.invalidFeed
         }
 
-        for pageURL in ReleaseConfiguration.energyNewsPageURLs {
+        var aggregated: [EnergyNewsItem] = []
+
+        for source in sources {
             do {
-                let items = try await fetchNews(from: pageURL, forceRefresh: forceRefresh)
-                if !items.isEmpty {
-                    return Array(items.prefix(20))
-                }
+                let items = try await fetchNews(from: source, forceRefresh: forceRefresh)
+                aggregated.append(contentsOf: items)
             } catch {
                 continue
             }
         }
 
-        throw EnergyNewsServiceError.feedUnavailable
+        guard !aggregated.isEmpty else {
+            throw EnergyNewsServiceError.feedUnavailable
+        }
+
+        let deduped = dedupedArticles(aggregated)
+        let todayOnly = articlesPublishedToday(from: deduped)
+            .sorted { lhs, rhs in
+                (lhs.publishedAt ?? .distantPast) > (rhs.publishedAt ?? .distantPast)
+            }
+
+        guard !todayOnly.isEmpty else {
+            throw EnergyNewsServiceError.emptyFeed
+        }
+
+        return Array(todayOnly.prefix(20))
     }
 
-    private func fetchNews(from pageURL: URL, forceRefresh: Bool) async throws -> [EnergyNewsItem] {
-        var request = URLRequest(url: pageURL)
+    private func fetchNews(from source: Source, forceRefresh: Bool) async throws -> [EnergyNewsItem] {
+        var request = URLRequest(url: source.url)
         request.timeoutInterval = 20
         request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
-        request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        request.setValue("application/rss+xml,application/xml,text/xml,text/html,application/xhtml+xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
         request.cachePolicy = forceRefresh ? .reloadIgnoringLocalCacheData : .useProtocolCachePolicy
         if forceRefresh {
             request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
@@ -384,15 +411,244 @@ struct EnergyNewsService: EnergyNewsServicing {
             throw EnergyNewsServiceError.feedUnavailable
         }
 
-        let parser = EnergyNewsHTMLParser(data: data, baseURL: pageURL)
-        let items = try parser.parse()
+        switch source.kind {
+        case .rss:
+            let parser = EnergyNewsRSSParser(data: data, baseURL: source.url)
+            return try parser.parse()
+        case .html:
+            let parser = EnergyNewsHTMLParser(data: data, baseURL: source.url)
+            return try parser.parse()
+        }
+    }
+
+    private func dedupedArticles(_ items: [EnergyNewsItem]) -> [EnergyNewsItem] {
+        var seenLinks = Set<String>()
+        var unique: [EnergyNewsItem] = []
+
+        for item in items {
+            let link = item.link.absoluteString
+            if seenLinks.insert(link).inserted {
+                unique.append(item)
+            }
+        }
+
+        return unique
+    }
+
+    private func articlesPublishedToday(from items: [EnergyNewsItem]) -> [EnergyNewsItem] {
+        let now = Date()
+        let calendar = Calendar.current
+        return items.filter { item in
+            guard let publishedAt = item.publishedAt else {
+                return false
+            }
+            return calendar.isDate(publishedAt, inSameDayAs: now)
+        }
+    }
+
+    private static let defaultSources: [Source] = {
+        var configured: [Source] = [
+            Source(
+                name: "EIA Today in Energy RSS",
+                url: URL(string: "https://www.eia.gov/rss/todayinenergy.xml")!,
+                kind: .rss
+            ),
+            Source(
+                name: "EIA Press Releases RSS",
+                url: URL(string: "https://www.eia.gov/rss/press_rss.xml")!,
+                kind: .rss
+            ),
+            Source(
+                name: "OilPrice RSS",
+                url: URL(string: "https://oilprice.com/rss.xml")!,
+                kind: .rss
+            )
+        ]
+
+        configured.append(
+            contentsOf: ReleaseConfiguration.energyNewsPageURLs.map { url in
+                Source(name: "EIA Today in Energy HTML", url: url, kind: .html)
+            }
+        )
+
+        return configured
+    }()
+}
+
+private struct EnergyNewsRSSParser {
+    private let data: Data
+    private let baseURL: URL
+
+    init(data: Data, baseURL: URL) {
+        self.data = data
+        self.baseURL = baseURL
+    }
+
+    func parse() throws -> [EnergyNewsItem] {
+        let delegate = EnergyNewsRSSDelegate(baseURL: baseURL)
+        let parser = XMLParser(data: data)
+        parser.delegate = delegate
+
+        guard parser.parse() else {
+            throw EnergyNewsServiceError.invalidFeed
+        }
+
+        let items = delegate.items
 
         guard !items.isEmpty else {
-            throw EnergyNewsServiceError.emptyFeed
+            throw EnergyNewsServiceError.invalidFeed
         }
 
         return items
     }
+}
+
+private final class EnergyNewsRSSDelegate: NSObject, XMLParserDelegate {
+    private let baseURL: URL
+
+    private(set) var items: [EnergyNewsItem] = []
+    private var isInItem = false
+    private var currentElement = ""
+    private var textBuffer = ""
+    private var titleText = ""
+    private var linkText = ""
+    private var descriptionText = ""
+    private var pubDateText = ""
+
+    init(baseURL: URL) {
+        self.baseURL = baseURL
+    }
+
+    func parser(
+        _ parser: XMLParser,
+        didStartElement elementName: String,
+        namespaceURI: String?,
+        qualifiedName qName: String?,
+        attributes attributeDict: [String: String] = [:]
+    ) {
+        currentElement = elementName.lowercased()
+        textBuffer = ""
+
+        if currentElement == "item" {
+            isInItem = true
+            titleText = ""
+            linkText = ""
+            descriptionText = ""
+            pubDateText = ""
+        }
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        guard isInItem else { return }
+        textBuffer += string
+    }
+
+    func parser(
+        _ parser: XMLParser,
+        didEndElement elementName: String,
+        namespaceURI: String?,
+        qualifiedName qName: String?
+    ) {
+        let element = elementName.lowercased()
+
+        guard isInItem else {
+            return
+        }
+
+        let value = textBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch element {
+        case "title":
+            titleText = value
+        case "link":
+            linkText = value
+        case "description":
+            descriptionText = value
+        case "pubdate":
+            pubDateText = value
+        case "item":
+            appendCurrentItem()
+            isInItem = false
+        default:
+            break
+        }
+    }
+
+    private func appendCurrentItem() {
+        let cleanTitle = sanitizeText(titleText)
+        let cleanSummary = sanitizeText(descriptionText)
+
+        guard !cleanTitle.isEmpty,
+              let link = URL(string: linkText, relativeTo: baseURL)?.absoluteURL else {
+            return
+        }
+
+        let publishedAt = EnergyNewsDateParser.parse(pubDateText)
+        let summary = cleanSummary.isEmpty ? "Tap to read the full article." : cleanSummary
+
+        items.append(
+            EnergyNewsItem(
+                title: cleanTitle,
+                summary: summary,
+                link: link,
+                publishedAt: publishedAt
+            )
+        )
+    }
+
+    private func sanitizeText(_ input: String) -> String {
+        let stripped = input.replacingOccurrences(
+            of: "<[^>]+>",
+            with: " ",
+            options: .regularExpression
+        )
+
+        return stripped
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
+            .replacingOccurrences(of: "&rsquo;", with: "'")
+            .replacingOccurrences(of: "&lsquo;", with: "'")
+            .replacingOccurrences(of: "&ldquo;", with: "\"")
+            .replacingOccurrences(of: "&rdquo;", with: "\"")
+            .replacingOccurrences(of: "&mdash;", with: "--")
+            .replacingOccurrences(of: "&ndash;", with: "-")
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private enum EnergyNewsDateParser {
+    static func parse(_ value: String) -> Date? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        for formatter in formatters {
+            if let date = formatter.date(from: trimmed) {
+                return date
+            }
+        }
+        return nil
+    }
+
+    private static let formatters: [DateFormatter] = {
+        let formats = [
+            "EEE, dd MMM yyyy HH:mm:ss Z",
+            "EEE, d MMM yyyy HH:mm:ss Z",
+            "EEE, dd MMM yyyy HH:mm:ss zzz",
+            "EEE, d MMM yyyy HH:mm:ss zzz",
+            "yyyy-MM-dd'T'HH:mm:ssZ",
+            "yyyy-MM-dd HH:mm:ss"
+        ]
+
+        return formats.map { format in
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            formatter.dateFormat = format
+            return formatter
+        }
+    }()
 }
 
 private struct EnergyNewsHTMLParser {
