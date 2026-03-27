@@ -98,7 +98,7 @@ final class CommodityViewModelTests: XCTestCase {
                 title: "WTI exports rise",
                 summary: "Sample cached summary for the EIA article.",
                 link: URL(string: "https://www.eia.gov/todayinenergy/detail.php?id=1")!,
-                publishedAt: Date(timeIntervalSince1970: 100)
+                publishedAt: Date()
             )
         ]
 

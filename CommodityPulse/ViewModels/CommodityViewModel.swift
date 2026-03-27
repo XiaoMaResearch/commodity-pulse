@@ -262,7 +262,7 @@ final class EnergyNewsViewModel: ObservableObject {
 
     private let service: EnergyNewsServicing
     private let defaults: UserDefaults
-    private let cacheKey = "commodityPulse.cachedEnergyNews.v1"
+    private let cacheKey = "commodityPulse.cachedEnergyNews.v2"
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
@@ -291,7 +291,7 @@ final class EnergyNewsViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            articles = try await service.fetchNews(forceRefresh: force)
+            articles = todayOnly(try await service.fetchNews(forceRefresh: force))
             lastUpdated = Date()
             errorMessage = nil
             isShowingCachedArticles = false
@@ -319,9 +319,18 @@ final class EnergyNewsViewModel: ObservableObject {
             return
         }
 
-        articles = payload.articles
+        articles = todayOnly(payload.articles)
         lastUpdated = payload.lastUpdated
-        isShowingCachedArticles = !payload.articles.isEmpty
+        isShowingCachedArticles = !articles.isEmpty
+    }
+
+    private func todayOnly(_ items: [EnergyNewsItem]) -> [EnergyNewsItem] {
+        let calendar = Calendar.current
+        let now = Date()
+        return items.filter { item in
+            guard let publishedAt = item.publishedAt else { return false }
+            return calendar.isDate(publishedAt, inSameDayAs: now)
+        }
     }
 
     func clearCachedNews() {
